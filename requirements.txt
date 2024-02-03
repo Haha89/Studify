@@ -1,0 +1,9 @@
+matplotlib
+scikit-learn
+opencv-python
+pandas
+weasyprint
+jinja2
+pylatex
+pdfLaTex
+customtkinter
