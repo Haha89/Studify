@@ -3,8 +3,8 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 
-from models.canvas import Canvas
-from models.colors import DIM_BASE
+from legome.models.canvas import Canvas
+from legome.models.static import DIM_BASE
 
 
 class PdfCreator:
@@ -25,16 +25,17 @@ class PdfCreator:
 
     def generate_html(self):
         from jinja2 import Environment, FileSystemLoader
-        env = Environment(loader=FileSystemLoader('../pdf'))
+        from os.path import dirname, abspath, join
+        base_path = dirname(dirname(abspath(__file__)))
+        env = Environment(loader=FileSystemLoader(join(base_path, "export")))
         template = env.get_template("template.html")
         template_vars = {"title": f"LegoMe: {self.canvas.source}",
                          "bases": self.get_bases_maps_and_repartition(),
                          "colors": pd.DataFrame(
                              [{"color": k, "RGB": v} for k, v in self.canvas.store.COLORS.items()]).to_html()}
         html_out = template.render(template_vars)
-        filename = f"../output/{self.canvas.source}.html"
+        filename = join(dirname(base_path), "output", f"{self.canvas.source}.html")
         with open(filename, "wb+") as f:
             f.write(bytes(html_out, 'utf-8'))
-
         import webbrowser, os
         webbrowser.open(os.path.abspath(filename), new=2)

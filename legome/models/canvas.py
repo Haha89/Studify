@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from models.brick import Brick
-from models.brickstore import BrickStore
-from models.colors import DIM_BASE
+from legome.models.brick import Brick
+from legome.models.brickstore import BrickStore
+from legome.models.static import DIM_BASE
 
 
 class Canvas:
@@ -33,7 +33,7 @@ class Canvas:
 
         :return: A dictionary mapping Brick objects to their count on the canvas.
         """
-        from models.utils import get_distribution
+        from legome.models.utils import get_distribution
         return get_distribution(self.bricks)
 
     def get_brick_ids(self) -> np.array:
@@ -49,7 +49,7 @@ class Canvas:
         self.plot(pixels)
 
     def to_html(self) -> str:
-        from models.utils import make_map
+        from legome.models.utils import make_map
         return make_map(pd.DataFrame(self.get_brick_ids()))
 
     @staticmethod

@@ -1,8 +1,8 @@
-from models.brick import Brick
+from legome.models.brick import Brick
 
 
 class BrickStore:
-    from models.colors import COLORS
+    from legome.models.static import COLORS
     available_bricks = [Brick(i, c) for i, c in enumerate(COLORS.values())]
 
     @staticmethod

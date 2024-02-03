@@ -2,7 +2,7 @@ from typing import Dict, List
 
 import pandas as pd
 
-from models.brick import Brick
+from legome.models.brick import Brick
 
 
 def get_distribution(bricks: List[List[Brick]]) -> Dict[int, int]:
