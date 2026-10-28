@@ -1,29 +1,81 @@
-<html>
-<meta charset="utf-8">
-<meta name="author" content="Madcats">
-<title>{{title}}</title>
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="author" content="Madcats">
+    <title>{{ title }}</title>
     <link rel="stylesheet" href="./style.css">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
-          integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
-
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
-        crossorigin="anonymous"></script>
 
+<header class="cover">
+    <h1>{{ title }}</h1>
+    <dl class="stats">
+        <div><dt>Size</dt><dd>{{ mosaic_size }}</dd></div>
+        <div><dt>Baseplates</dt><dd>{{ bases | length }}</dd></div>
+        <div><dt>Colors</dt><dd>{{ total_colors }}</dd></div>
+        <div><dt>Bricks</dt><dd>{{ total_bricks }}</dd></div>
+        <div><dt>Est. cost</dt><dd>${{ "%.2f" | format(total_cost) }}</dd></div>
+    </dl>
+</header>
 
-{% for b in bases %}
-<div id=f"chapitre-" class="col-9">
-    <h2 id="chapitre-1-h2">{{b.get("name")}}</h2>
-    {{ b.get("table") }}
-</div>
-<p class="col" style="page-break-after: always;">{{b.get("distribution")}}</p>
+{% if original_image or mosaic_image %}
+<section class="card overview">
+    <h2>Overview</h2>
+    <div class="image-grid">
+        {% if original_image %}
+        <figure>
+            <img src="{{ original_image }}" alt="Original image">
+            <figcaption>Original</figcaption>
+        </figure>
+        {% endif %}
+        {% if mosaic_image %}
+        <figure>
+            <img src="{{ mosaic_image }}" alt="Reconstructed LEGO mosaic" class="pixelated">
+            <figcaption>Reconstructed &middot; {{ mosaic_size }}</figcaption>
+        </figure>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+{% for base in bases %}
+<section class="card baseplate">
+    <h2>{{ base.name }}</h2>
+    <div class="baseplate-layout">
+        <div class="stud-map-wrap">{{ base.table | safe }}</div>
+        <div class="brick-list-wrap">
+            <h3>Bricks needed</h3>
+            <ul class="brick-list">
+                {% for brick_id, count in base.distribution.items() %}
+                <li><span class="brick-id">#{{ brick_id }}</span> &times; {{ count }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</section>
 {% endfor %}
 
-<h3>Colors</h3>
-{{ colors }}
+<section class="card palette">
+    <h2>Colors used</h2>
+    <table class="color-table">
+        <thead>
+        <tr><th>Id</th><th>Swatch</th><th>Name</th><th>RGB</th><th>Bricks</th></tr>
+        </thead>
+        <tbody>
+        {% for color in colors %}
+        <tr>
+            <td>{{ color.id }}</td>
+            <td><span class="swatch" style="background: rgb{{ color.rgb }}"></span></td>
+            <td>{{ color.name }}</td>
+            <td>{{ color.rgb }}</td>
+            <td>{{ color.count }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
 </body>
 </html>

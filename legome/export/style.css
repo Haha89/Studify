@@ -1,111 +1,307 @@
-   td {
-      width: 20px;height: 20px
-      }
-      @font-face {
-  font-family: SourceSerifPro;
-  src: url("fonts/SourceSerifPro-Regular.ttf") format('truetype');
-}
-@page {
-  size: 110mm 170mm;
-}
-@page :left {
-  margin: 5mm 5mm 10mm 10mm;
-  @top-left { content: counter(page) }
-  @top-right { content: string(heading); font-variant: small-caps }
-}
-@page :right {
-  margin: 5mm 5mm 10mm 10mm;
-  @top-left { content: string(heading); font-variant: small-caps }
-  @top-right { content: counter(page) }
-}
-@page :blank {
-  @top-right { content: none }
-  @top-left { content: none }
-}
-@page clean {
-  @top-right { content: none }
-  @top-left { content: none }
-}
-img {
-  display: none;
+/* Build-guide styling. Self-contained: no external stylesheet or script. */
+
+:root {
+    --color-bg: #f4f5f7;
+    --color-surface: #ffffff;
+    --color-border: #e0e2e7;
+    --color-text: #1f2328;
+    --color-muted: #5c6370;
+    --color-accent: #c8102e; /* LEGO red */
 }
 
-html {
-  font-family: SourceSerifPro;
-  font-size: 10pt;
+* {
+    box-sizing: border-box;
 }
+
 body {
-  margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    margin: 0;
+    padding: 2rem 1rem 4rem;
 }
-section {
-  break-after: right;
-  padding-top: 25mm;
-}
-aside {
-  display: none;
+
+h1, h2, h3 {
+    font-weight: 600;
+    margin: 0 0 1rem;
 }
 
 h1 {
-  break-after: right;
-  font-size: 2.6em;
-  font-weight: normal;
-  margin: 3em 0;
-  page: clean;
+    font-size: 1.9rem;
 }
+
 h2 {
-  font-size: 1em;
-  font-variant: small-caps;
-  font-weight: normal;
-  margin: 0 0 2em;
-  page: clean;
-  string-set: heading content();
-  text-align: center;
-}
-p {
-  hyphens: auto;
-  margin: 0;
-  text-align: justify;
-  text-indent: 1em;
-}
-dd {
-  margin: 0 0 0 1em;
-}
-br::after {
-  content: '';
-  display: inline-block;
-  width: 0.78em;
+    border-bottom: 2px solid var(--color-accent);
+    font-size: 1.3rem;
+    padding-bottom: 0.4rem;
 }
 
-#authors {
-  page: clean;
-}
-#authors p {
-  text-indent: 0;
-}
-
-#contents {
-  page: clean;
-}
-#contents p {
-  margin: 2em 0;
-  text-indent: 0;
-}
-#contents ul {
-  display: block;
-  margin: 1em 0;
-  padding: 0;
-}
-#contents li {
-  display: block;
-}
-#contents a {
-  color: inherit;
-  text-decoration: none;
-}
-#contents a::before {
-  content: target-text(attr(href)) ' ' leader('.') ' ' target-counter(attr(href), page);
+h3 {
+    color: var(--color-muted);
+    font-size: 0.95rem;
+    margin-top: 1.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
-.fullpage {
-  display: none;
+img {
+    display: block;
+    height: auto;
+    max-width: 100%;
+}
+
+/* ---------- Layout ---------- */
+
+.cover,
+.card {
+    margin: 0 auto 1.5rem;
+    max-width: 900px;
+}
+
+.cover {
+    padding: 0.5rem 0 1rem;
+    text-align: center;
+}
+
+.card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    padding: 1.5rem 1.75rem;
+}
+
+/* Wider than the other cards: the stud map and the brick list sit side by side. */
+.baseplate {
+    max-width: 1050px;
+}
+
+/* ---------- Cover stats ---------- */
+
+.stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    margin: 1rem 0 0;
+}
+
+.stats > div {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    min-width: 7rem;
+    padding: 0.6rem 1rem;
+}
+
+.stats dt {
+    color: var(--color-muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.stats dd {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0.15rem 0 0;
+}
+
+/* ---------- Overview ---------- */
+
+.image-grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.image-grid figure {
+    margin: 0;
+}
+
+.image-grid img {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    margin: 0 auto;
+}
+
+figcaption {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+    text-align: center;
+}
+
+/* The reconstructed mosaic is one pixel per brick: keep its edges crisp when the
+   browser scales it up, instead of blurring it into a smooth photo. */
+.pixelated {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+/* ---------- Stud maps ---------- */
+
+/* The stud map is a fixed width (it must stay sharp and square); the brick list
+   takes whatever room is left beside it, and drops below it if that isn't much. */
+.baseplate-layout {
+    align-items: flex-start;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.75rem;
+}
+
+.stud-map-wrap {
+    flex: 0 0 auto;
+}
+
+.brick-list-wrap {
+    flex: 1 1 160px;
+}
+
+.brick-list-wrap h3 {
+    margin-top: 0;
+}
+
+.stud-map {
+    border-collapse: collapse;
+    margin: 0 auto;
+}
+
+.stud-map td,
+.stud-map th {
+    font-size: 10px;
+    height: 16px;
+    line-height: 1;
+    padding: 0;
+    text-align: center;
+    vertical-align: middle;
+    width: 16px;
+}
+
+/* A thin line between adjacent studs of different colours... */
+.stud-map td.border-top {
+    border-top: 1px solid var(--color-text);
+}
+
+.stud-map td.border-bottom {
+    border-bottom: 1px solid var(--color-text);
+}
+
+.stud-map td.border-start {
+    border-left: 1px solid var(--color-text);
+}
+
+.stud-map td.border-end {
+    border-right: 1px solid var(--color-text);
+}
+
+/* ...and a bold line every GRID_MAJOR_EVERY studs, winning over the thin one
+   above where both apply (same specificity, declared later), so the 32x32
+   baseplate reads as a grid of bold sub-squares you can count by. */
+.stud-map td.grid-major-top {
+    border-top: 2px solid var(--color-text);
+}
+
+.stud-map td.grid-major-bottom {
+    border-bottom: 2px solid var(--color-text);
+}
+
+.stud-map td.grid-major-start {
+    border-left: 2px solid var(--color-text);
+}
+
+.stud-map td.grid-major-end {
+    border-right: 2px solid var(--color-text);
+}
+
+/* A vertical list of pills, flowing into another column instead of growing
+   unboundedly tall when a baseplate uses a lot of colours. */
+.brick-list {
+    column-gap: 1rem;
+    column-width: 130px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.brick-list li {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    break-inside: avoid;
+    display: inline-block;
+    font-size: 0.8rem;
+    margin-bottom: 0.35rem;
+    padding: 0.2rem 0.65rem;
+    width: fit-content;
+}
+
+.brick-id {
+    color: var(--color-muted);
+}
+
+/* ---------- Color reference ---------- */
+
+.color-table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.color-table th {
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.5rem;
+    text-align: left;
+}
+
+.color-table td {
+    border-bottom: 1px solid var(--color-bg);
+    padding: 0.4rem 0.5rem;
+}
+
+.color-table tbody tr:nth-child(even) {
+    background: var(--color-bg);
+}
+
+.swatch {
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    display: inline-block;
+    height: 1.1rem;
+    width: 1.1rem;
+}
+
+/* ---------- Print ---------- */
+
+@page {
+    size: A4;
+    margin: 10mm;
+}
+
+@media print {
+    body {
+        background: var(--color-surface);
+        padding: 0;
+    }
+
+    .card {
+        box-shadow: none;
+    }
+
+    .cover {
+        break-after: page;
+        page-break-after: always;
+    }
+
+    /* One baseplate per printed page. The colour reference always follows the
+       last baseplate, so it never needs a page break of its own. */
+    .overview,
+    .baseplate {
+        break-after: page;
+        page-break-after: always;
+    }
+
+    a[href]::after {
+        content: none;
+    }
 }

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+
+# Tooling
+.idea/
+.vscode/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Generated build guides
+output/
