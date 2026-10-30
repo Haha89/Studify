@@ -86,3 +86,12 @@ def test_price_options_end_to_end(red_blue_image, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Total estimated cost:" in out and "$" in out
     assert "compatible baseplates" in out and "shipping not included" in out
+
+
+def test_palette_flag(red_blue_image, tmp_path):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    assert main([*args, "--palette", "common"]) == 0
+    with pytest.raises(SystemExit):
+        main([*args, "--palette", "rainbow"])
+    with pytest.raises(SystemExit):  # one way of choosing colours at a time
+        main([*args, "--palette", "all", "--colors", "Black"])

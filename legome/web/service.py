@@ -26,6 +26,7 @@ import cv2
 import numpy as np
 
 from legome.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
+from legome.models.pricing import DEFAULT_PALETTE
 from legome.models.utils import read_image
 from legome.process import build_canvas
 
@@ -216,6 +217,7 @@ def render_styles(
     crop: Crop | list[float] | None = None,
     baseplates: str = "official",
     currency: str = "EUR",
+    palette: str = DEFAULT_PALETTE,
 ) -> list[dict[str, object]]:
     """Fit the session's image (cropped to ``crop``, if given) once per style in
     ``STYLE_LABELS`` and return, for each, its preview image, build figures and
@@ -223,7 +225,7 @@ def render_styles(
     path = _working_image(session_id, crop)
     results = []
     for style, label in STYLE_LABELS.items():
-        canvas = build_canvas(size, path, frame=frame, max_colors=max_colors, style=style)
+        canvas = build_canvas(size, path, frame=frame, max_colors=max_colors, style=style, palette=palette)
         rows, cols = canvas.shape
         distribution = canvas.get_distribution()
         price = canvas.get_price(baseplates, currency)
@@ -254,12 +256,13 @@ def build_pdf(
     crop: Crop | list[float] | None = None,
     baseplates: str = "official",
     currency: str = "EUR",
+    palette: str = DEFAULT_PALETTE,
 ) -> Path:
     """Write the build guide for one style as a PDF and return its path."""
     if style not in STYLE_LABELS:
         raise ImageError("Style inconnu.")
     path = _working_image(session_id, crop)
-    canvas = build_canvas(size, path, frame=frame, max_colors=max_colors, style=style)
+    canvas = build_canvas(size, path, frame=frame, max_colors=max_colors, style=style, palette=palette)
     creator = PdfCreator(canvas, baseplates=baseplates, currency=currency)
     return creator.generate_pdf(output_dir=source_path(session_id).parent / f"guide-{style}")
 

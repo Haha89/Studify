@@ -1,4 +1,5 @@
 from legome.models.brick import Brick
+from legome.models.pricing import PALETTE_TIERS, color_tier
 from legome.models.static import COLORS
 
 # Name prefixes/entries that aren't ordinary, buildable LEGO colors: placeholders
@@ -38,6 +39,15 @@ class BrickStore:
     available_bricks: list[Brick] = [
         brick for brick, name in zip(all_bricks, COLORS, strict=True) if _is_buildable(name)
     ]
+
+    @classmethod
+    def palette(cls, name: str) -> list[Brick]:
+        """Return the plain buildable bricks in a ``pricing.PALETTE_TIERS`` palette:
+        "buyable" (no rare colours), "all", or "common" only."""
+        if name not in PALETTE_TIERS:
+            raise ValueError(f"Unknown palette {name!r}; expected one of {list(PALETTE_TIERS)}")
+        tiers = PALETTE_TIERS[name]
+        return [brick for brick in cls.available_bricks if color_tier(brick.id) in tiers]
 
     @classmethod
     def bricks_named(cls, names: list[str]) -> list[Brick]:

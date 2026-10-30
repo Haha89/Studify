@@ -22,6 +22,7 @@ FRAMES = range(0, 5)  # Frame width in studs.
 COLOR_LIMITS = [("Toutes", "0"), ("16", "16"), ("12", "12"), ("8", "8"), ("6", "6")]
 BASEPLATE_CHOICES = [("Officielles LEGO", "official"), ("Compatibles", "compatible")]
 CURRENCY_CHOICES = [("€", "EUR"), ("$", "USD")]
+PALETTE_CHOICES = [("Sans couleurs rares", "buyable"), ("Toutes", "all"), ("Courantes seulement", "common")]
 STUD_MM = 8  # Distance between two LEGO studs.
 # Crop aspect ratios offered (width / height); "free" lets the box be any shape.
 CROP_RATIOS = [
@@ -235,6 +236,26 @@ def _layout() -> dmc.MantineProvider:
                             id="max-colors",
                             data=[{"label": label, "value": value} for label, value in COLOR_LIMITS],
                             value="0",
+                            radius="xl",
+                        ),
+                    ],
+                    gap=6,
+                    align="flex-start",
+                ),
+                dmc.Stack(
+                    [
+                        dmc.Text("Palette de couleurs", fw=600, size="sm"),
+                        dmc.Text(
+                            "Les couleurs rares (anciens gris et bruns, pastels…) sont chères et dures à trouver "
+                            "en quantité. Les écarter change peu le rendu et baisse nettement le prix. "
+                            "Le style Pop art garde sa propre palette.",
+                            c="dimmed",
+                            size="xs",
+                        ),
+                        dmc.SegmentedControl(
+                            id="palette",
+                            data=[{"label": label, "value": value} for label, value in PALETTE_CHOICES],
+                            value="buyable",
                             radius="xl",
                         ),
                     ],
@@ -544,13 +565,14 @@ def create_app() -> Dash:
         Input("crop", "data"),
         Input("baseplates", "value"),
         Input("currency", "value"),
+        Input("palette", "value"),
         State("size", "value"),
         State("frame", "value"),
         State("max-colors", "value"),
         running=[(Output("generate", "loading"), True, False)],
         prevent_initial_call=True,
     )
-    def generate_styles(_clicks, source, crop, baseplates, currency, size, frame, max_colors):
+    def generate_styles(_clicks, source, crop, baseplates, currency, palette, size, frame, max_colors):
         if not source:
             return no_update, no_update, no_update
         settings = {
@@ -560,6 +582,7 @@ def create_app() -> Dash:
             "crop": crop,
             "baseplates": baseplates,
             "currency": currency,
+            "palette": palette,
         }
         try:
             results = service.render_styles(source["session"], **settings)

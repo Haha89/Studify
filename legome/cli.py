@@ -38,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Also match trans/chrome/speckle/pearl/metallic finishes, not just plain buildable colors.",
     )
     palette.add_argument(
+        "--palette",
+        choices=["buyable", "all", "common"],
+        default="buyable",
+        help="Colours to draw from: buyable (default: no rare, pricey colours), all, or common only.",
+    )
+    palette.add_argument(
         "--colors",
         type=lambda value: [name.strip() for name in value.split(",") if name.strip()],
         metavar="NAMES",
@@ -114,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         max_colors=args.max_colors,
         dither=args.dither,
         style=args.style,
+        palette=args.palette,
         baseplates=args.baseplates,
         currency=args.currency,
     )

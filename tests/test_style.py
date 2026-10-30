@@ -95,3 +95,18 @@ def test_explicit_colours_override_the_style_palette(square_image, tmp_path):
         1, square_image, output_dir=tmp_path, plot=False, open_in_browser=False, style="pop", colors=["Tan", "Black"]
     )
     assert set(canvas.get_distribution()) <= {brick.id for brick in BrickStore.bricks_named(["Tan", "Black"])}
+
+
+def test_build_canvas_skips_rare_colours_by_default(tmp_path):
+    from legome.models.pricing import color_tier
+    from legome.process import build_canvas
+
+    # Random noise spans the whole colour cube, so every palette colour has a chance.
+    rng = np.random.default_rng(7)
+    path = tmp_path / "noise.png"
+    cv2.imwrite(str(path), rng.integers(0, 256, size=(64, 64, 3), dtype=np.uint8))
+
+    default = build_canvas(1, path)
+    everything = build_canvas(1, path, palette="all")
+    assert all(color_tier(i) != "rare" for i in default.get_distribution())
+    assert any(color_tier(i) == "rare" for i in everything.get_distribution())
