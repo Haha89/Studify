@@ -1,10 +1,41 @@
 # LegoMe
 
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://pre-commit.com/)
+[![Tested with pytest](https://img.shields.io/badge/tested%20with-pytest-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Web app: Dash](https://img.shields.io/badge/web%20app-Dash-008DE4?logo=plotly&logoColor=white)](https://dash.plotly.com/)
+[![Unofficial: not affiliated with LEGO](https://img.shields.io/badge/unofficial-not%20affiliated%20with%20LEGO-lightgrey)](#disclaimer)
+
 Turn any image into a LEGO mosaic and a printable, baseplate-by-baseplate build guide.
+
+> **Unofficial fan project.** LegoMe is not affiliated with, sponsored, authorized or
+> endorsed by the LEGO Group. See the [disclaimer](#disclaimer).
 
 LegoMe downsamples your picture to whole 32x32 LEGO baseplates, snaps every pixel to the
 nearest real LEGO colour, and writes an HTML guide with one stud map per baseplate, the
 brick counts you need, and a cost estimate.
+
+## Example
+
+One picture, three styles, each 3 x 3 baseplates (96 x 96 studs, about 77 cm a side)
+with a 2-stud black frame:
+
+| Original | Natural | Pop (`--style pop`) | Comic (`--style comic`) |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/images/dog-original.png" width="200" alt="Original picture"> | <img src="docs/images/dog-natural.png" width="200" alt="Natural mosaic"> | <img src="docs/images/dog-pop.png" width="200" alt="Pop-art mosaic"> | <img src="docs/images/dog-comic.png" width="200" alt="Comic mosaic"> |
+| | 57 colours | 12 colours | 56 colours |
+| | 404–813 € | 291–512 € | 353–678 € |
+
+Prices are estimates with official LEGO baseplates, shipping excluded (see
+[Pricing](#pricing)). The pop style's short palette makes it the cheapest to build.
+
+**Example build guide:** [`docs/example-guide-dog.pdf`](docs/example-guide-dog.pdf), the
+pop render at 2 x 2 baseplates. It has an overview, then one A4 page per baseplate with
+its stud map and the bricks it needs, then the colour reference.
+
+Regenerate these with `uv run python scripts/make_docs.py`.
 
 ## Install
 
@@ -46,14 +77,17 @@ uv run legome --gui
 | `--no-plot` | Skip the matplotlib preview. |
 | `--no-open` | Do not open the guide in a browser. |
 | `--frame` | Black frame this many studs wide around the mosaic (default `0`, max `15`). |
+| `--palette` | Colours to draw from: `buyable` (default: no rare, pricey colours), `all`, or `common` only. |
 | `--colors` | Only use these LEGO colours, comma-separated, e.g. `"Black,White,Red"`. |
 | `--max-colors` | Use at most N colours, chosen to best fit the image. |
 | `--style` | Retouch the photo first: `natural` (default), `pop` (vivid, flat, short palette) or `comic` (black outlines). |
 | `--dither` | Blend colours the palette lacks with Floyd-Steinberg dithering. |
+| `--baseplates` | Price `official` LEGO baseplates (default) or cheaper `compatible` ones. |
+| `--currency` | Currency of the price estimate: `EUR` (default) or `USD`. |
 | `--gui` | Launch the graphical interface. |
 
 The guide lands at `<output-dir>/<image-name>.html`. Open it and print to PDF — the
-stylesheet puts one baseplate on each page.
+stylesheet puts one baseplate on each page — or call `PdfCreator.generate_pdf`.
 
 ### Web app
 
@@ -62,8 +96,9 @@ uv sync --extra web
 uv run legome-web        # then open http://127.0.0.1:8050
 ```
 
-Upload a photo (or paste a link), pick the size, frame and colour limit, compare the
-natural, pop and comic renders side by side, and download the chosen one as a PDF guide.
+Upload a photo (or paste a link), crop it if you like, pick the size, frame, colour
+limit, baseplates and currency, compare the natural, pop and comic renders side by side
+with their prices, and download the chosen one as a PDF guide.
 PDFs are printed by a headless Chrome, Chromium or Edge; set `LEGOME_BROWSER` to point at
 one if it isn't found automatically.
 
@@ -78,9 +113,9 @@ canvas.fit_from_image("pics/dog.png")
 
 print(canvas.shape)  # (rows, cols) in studs
 print(canvas.get_distribution())  # {brick_id: count}
-print(canvas.get_cost())  # USD
+print(canvas.get_price().format())  # e.g. "129–228 €"
 
-PdfCreator(canvas).generate_html(output_dir="output")
+PdfCreator(canvas).generate_html(output_dir="output")  # or .generate_pdf(...)
 ```
 
 ## How it works
@@ -97,7 +132,22 @@ PdfCreator(canvas).generate_html(output_dir="output")
    run of same-coloured bricks so you can see the shapes while building
    (`utils.make_map`).
 
-Costs assume $0.03 per 1x1 plate and $2.00 per 32x32 baseplate (`models/brickstore.py`).
+## Pricing
+
+The estimate (`models/pricing.py`) is a range, not a quote:
+
+- **Bricks** are priced by how easy their colour is to buy: common colours
+  EUR 0.02–0.04 a 1x1 plate, uncommon ones EUR 0.05–0.12, rare (retired or short-lived)
+  ones EUR 0.15–0.50; plus 5 % spares.
+- **Baseplates**: EUR 8.99 for official LEGO 32x32 plates, about EUR 2 for compatible ones.
+- **Dollars** use a fixed rate (`USD_PER_EUR`), to update by hand.
+- **Shipping is not included**; on BrickLink it often outweighs the parts on small orders.
+
+Rare colours are left out by default (`--palette buyable`): on sample pictures that
+barely changed the mosaic but cut its price by 35–50 %. Use `--palette all` to allow
+them; any a build uses are then listed in the guide and the web app, as they make a
+mosaic much dearer and can be hard to find in bulk at all. All figures are rough market
+estimates (sources in the module), kept in plain tables so they are easy to update.
 
 ## Layout
 
@@ -130,14 +180,29 @@ uv run ruff format .                # format
 ## Notes
 
 - The palette in `static.py` has 133 entries but only 122 distinct RGB values (for example
-  `Red` and `Trans-Red` are identical). By default, matching only considers
-  `BrickStore.available_bricks` (81 plain, buildable colours) — trans, chrome, speckle,
-  glitter, pearl, metallic and glow-in-dark finishes are excluded, since several sit
-  exactly on top of a plain colour (e.g. the discontinued `Speckle Black-Copper` is pure
-  `(0, 0, 0)`, same as `Black`) and would otherwise win ties against it. Pass `--full-palette`
-  to also match against those finishes.
-- Brick ids in the guide are indices into `static.COLORS`; the guide's final table maps
-  every id to its name, RGB and a swatch.
+  `Red` and `Trans-Red` are identical). `BrickStore.available_bricks` keeps the 81 plain,
+  buildable colours — trans, chrome, speckle, glitter, pearl, metallic and glow-in-dark
+  finishes are excluded, since several sit exactly on top of a plain colour (e.g. the
+  discontinued `Speckle Black-Copper` is pure `(0, 0, 0)`, same as `Black`) and would
+  otherwise win ties against it. Pass `--full-palette` to also match against those finishes.
+- By default, matching then also leaves out the 20 rare colours (`--palette buyable`, 61
+  colours); see [Pricing](#pricing).
+- Brick ids in the guide are compact numbers (1 to N, for the N colours that guide uses);
+  the guide's final table maps every id to its LEGO colour name, RGB and a swatch.
 - Colour data is cross-checked against the LDraw colour reference and BrickLink's colour
   guide, but it isn't exhaustive: common colours like `Dark Royal Blue`, `Coral`, the
   `Nougat` family and the `Neon`/`Satin Trans-` finishes aren't in the palette yet.
+
+## Disclaimer
+
+LegoMe is an independent, unofficial fan project. It is **not affiliated with,
+sponsored, authorized or endorsed by the LEGO Group**.
+
+LEGO® and the LEGO logo, the brick and knob configurations and the minifigure are
+trademarks and/or copyrights of the LEGO Group. The author claims no rights to them:
+the LEGO name and colour names are used only to describe which real parts a mosaic
+needs. Colour values come from the community-maintained LDraw and BrickLink references.
+
+Prices are rough estimates for information only, not offers or quotes, and are not
+endorsed by LEGO, BrickLink or any seller. Pictures you turn into mosaics remain
+subject to their own copyright: only use images you have the right to use.

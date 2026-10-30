@@ -203,3 +203,26 @@ class TestLocalColorIds:
             assert f'<li title="{name}">' in html
             assert f'<span class="swatch" style="background: rgb{rgb}"></span>' in html
             assert f'<span class="brick-name">{name}</span>' in html
+
+
+def test_compact_pdf_shrinks_loose_objects_and_keeps_the_pages(tmp_path):
+    pikepdf = pytest.importorskip("pikepdf")
+    from legome.models.pdf_creator import compact_pdf
+
+    path = tmp_path / "guide.pdf"
+    pdf = pikepdf.new()
+    for _ in range(3):
+        pdf.add_blank_page()
+    # Many small loose objects, like Chrome's per-cell structure tags, reachable from the root.
+    pdf.Root.Tags = pikepdf.Array(
+        [pdf.make_indirect(pikepdf.Dictionary(Type=pikepdf.Name.StructElem, K=i)) for i in range(2000)]
+    )
+    pdf.save(path, object_stream_mode=pikepdf.ObjectStreamMode.disable)
+    before = path.stat().st_size
+
+    compact_pdf(path)
+
+    assert path.stat().st_size < before / 2
+    with pikepdf.open(path) as compacted:
+        assert len(compacted.pages) == 3
+    assert not list(tmp_path.glob("*.packed.pdf"))  # no temp file left behind

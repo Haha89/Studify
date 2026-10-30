@@ -26,7 +26,7 @@ CURRENCY_SYMBOLS = {"EUR": "€", "USD": "$"}
 
 # Price of one 32x32 baseplate, in euros.
 BASEPLATE_PRICES_EUR = {"official": 8.99, "compatible": 2.00}
-BASEPLATE_LABELS = {"official": "LEGO official", "compatible": "Compatible"}
+BASEPLATE_LABELS = {"official": "official LEGO", "compatible": "compatible"}
 
 # Price range of one 1x1 plate, in euros, by how easy its colour is to find.
 TIER_PRICES_EUR = {
@@ -88,6 +88,16 @@ RARE_COLORS = frozenset(
     }
 )
 # Every other colour is "uncommon".
+
+# Which colour tiers each palette choice draws from. "buyable" is the default:
+# on sample pictures, dropping rare colours left the mosaic almost unchanged
+# but cut its price by 35-50 %; "common" alone visibly degrades skin tones.
+PALETTE_TIERS = {
+    "buyable": ("common", "uncommon"),
+    "all": ("common", "uncommon", "rare"),
+    "common": ("common",),
+}
+DEFAULT_PALETTE = "buyable"
 
 _NAMES = list(COLORS)
 

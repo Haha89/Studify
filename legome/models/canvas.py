@@ -9,7 +9,7 @@ import pandas as pd
 
 from legome.models.brick import Brick
 from legome.models.brickstore import BrickStore
-from legome.models.pricing import PriceEstimate, estimate_price
+from legome.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
 from legome.models.static import COLORS, DIM_BASE
 from legome.models.style import Style, outline_mask, retouch
 from legome.models.utils import (
@@ -221,9 +221,10 @@ class Canvas:
         colour by CIELAB distance.
 
         :param path: Path to the image file.
-        :param palette: Bricks to match against. Defaults to the store's buildable
-            colours (``BrickStore.available_bricks``); pass ``BrickStore.all_bricks``
-            to also allow trans/chrome/speckle/pearl/metallic finishes.
+        :param palette: Bricks to match against. Defaults to the buildable colours
+            that are easy to buy (``BrickStore.palette(DEFAULT_PALETTE)``: no rare
+            ones); pass ``BrickStore.available_bricks`` for every plain colour, or
+            ``BrickStore.all_bricks`` to also allow trans/chrome/pearl/... finishes.
         :param max_colors: Limit the build to the this many colours that best fit
             the image (see ``utils.reduce_palette``). None for no limit.
         :param dither: Blend colours the palette lacks with Floyd-Steinberg
@@ -243,7 +244,7 @@ class Canvas:
         resized = self.resize_img(src)
         outlined = style is not None and style.outline
 
-        palette = palette if palette is not None else self.store.available_bricks
+        palette = palette if palette is not None else self.store.palette(DEFAULT_PALETTE)
         if max_colors is not None:
             # A frame or outline must stay black, however few colours are allowed.
             needs_black = self.frame or outlined

@@ -5,6 +5,7 @@ from pathlib import Path
 from legome.models.brickstore import BrickStore
 from legome.models.canvas import Canvas
 from legome.models.pdf_creator import PdfCreator
+from legome.models.pricing import DEFAULT_PALETTE
 from legome.models.static import DIM_BASE
 from legome.models.style import STYLES
 
@@ -18,6 +19,7 @@ def build_canvas(
     max_colors: int | None = None,
     dither: bool = False,
     style: str = "natural",
+    palette: str = DEFAULT_PALETTE,
 ) -> Canvas:
     """
     Turn an image into a fitted LEGO mosaic, without writing anything.
@@ -33,16 +35,23 @@ def build_canvas(
     :param dither: Blend colours the palette lacks with Floyd-Steinberg dithering.
     :param style: Retouch preset from ``style.STYLES`` (natural, pop, comic). A
         style's own palette applies unless ``colors`` or ``full_palette`` is given.
+    :param palette: Which colours to draw from, by how easy they are to buy:
+        "buyable" (no rare colours, the default), "all" or "common" (see
+        ``pricing.PALETTE_TIERS``). Ignored when ``colors``, ``full_palette`` or
+        the style's own palette applies.
     :return: The fitted canvas.
     """
     canvas = Canvas(size, frame=frame)
     preset = STYLES[style]
     if colors is None and not full_palette and preset.colors:
         colors = list(preset.colors)
-    palette = BrickStore.all_bricks if full_palette else None
     if colors:
-        palette = BrickStore.bricks_named(colors)
-    canvas.fit_from_image(path, palette=palette, max_colors=max_colors, dither=dither, style=preset)
+        bricks = BrickStore.bricks_named(colors)
+    elif full_palette:
+        bricks = BrickStore.all_bricks
+    else:
+        bricks = BrickStore.palette(palette)
+    canvas.fit_from_image(path, palette=bricks, max_colors=max_colors, dither=dither, style=preset)
     return canvas
 
 

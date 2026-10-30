@@ -189,10 +189,16 @@ def make_map(df: pd.DataFrame) -> str:
 
 def get_class(grid: np.ndarray, row: int, col: int) -> str:
     """
-    Return the CSS classes for one cell: a thin border on every side where the
-    neighbouring brick differs (cells on the edge of the grid are always
-    bordered on that side), plus a bold border on every side that falls on a
-    ``GRID_MAJOR_EVERY``-stud boundary, to help count position while building.
+    Return the CSS classes for one cell: a thin border where the neighbouring
+    brick differs (the grid's outer edge is always bordered), plus a bold
+    border on every ``GRID_MAJOR_EVERY``-stud boundary, to help count position
+    while building.
+
+    Each line between two cells is drawn by exactly one of them: the cell
+    above or to the left, via its bottom or right border. Only the first row
+    and column also draw their top and left edges. Were both cells to draw a
+    shared line, a printed PDF can render the two strokes a fraction of a
+    pixel apart, which reads as a double line at some zoom levels.
     """
     rows, cols = grid.shape
     value = grid[row, col]
@@ -201,22 +207,22 @@ def get_class(grid: np.ndarray, row: int, col: int) -> str:
         return not (0 <= r < rows and 0 <= c < cols) or grid[r, c] != value
 
     classes = []
-    if differs(row - 1, col):
+    if row == 0:
         classes.append("border-top")
     if differs(row + 1, col):
         classes.append("border-bottom")
-    if differs(row, col - 1):
+    if col == 0:
         classes.append("border-start")
     if differs(row, col + 1):
         classes.append("border-end")
 
-    if row % GRID_MAJOR_EVERY == 0:
+    if row == 0:
         classes.append("grid-major-top")
-    if (row + 1) % GRID_MAJOR_EVERY == 0:
+    if (row + 1) % GRID_MAJOR_EVERY == 0 or row == rows - 1:
         classes.append("grid-major-bottom")
-    if col % GRID_MAJOR_EVERY == 0:
+    if col == 0:
         classes.append("grid-major-start")
-    if (col + 1) % GRID_MAJOR_EVERY == 0:
+    if (col + 1) % GRID_MAJOR_EVERY == 0 or col == cols - 1:
         classes.append("grid-major-end")
 
     return " ".join(classes)

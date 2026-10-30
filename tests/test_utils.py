@@ -83,9 +83,52 @@ def test_get_class_omits_borders_between_identical_neighbours():
 
 
 def test_get_class_borders_only_where_the_colour_changes():
-    # A vertical stripe of 9s: the centre brick is bordered left and right only.
+    # A vertical stripe of 9s: its left edge is drawn by the 0 to its left, its
+    # right edge by the stripe itself, each as a right border.
     grid = np.array([[0, 9, 0], [0, 9, 0], [0, 9, 0]])
-    assert get_class(grid, 1, 1) == "border-start border-end"
+    assert {"border-start", "border-end"} <= set(get_class(grid, 1, 0).split())  # also the grid's left edge
+    assert get_class(grid, 1, 1) == "border-end"
+
+
+def _drawn_edges(grid: np.ndarray, prefix: str) -> list[tuple]:
+    """Every line segment the classes draw, as ("h"/"v", row, col) in grid-line
+    coordinates: ("h", 2, 3) is the horizontal segment above row 2 at column 3."""
+    rows, cols = grid.shape
+    edges = []
+    for r in range(rows):
+        for c in range(cols):
+            classes = get_class(grid, r, c).split()
+            if f"{prefix}-top" in classes:
+                edges.append(("h", r, c))
+            if f"{prefix}-bottom" in classes:
+                edges.append(("h", r + 1, c))
+            if f"{prefix}-start" in classes:
+                edges.append(("v", r, c))
+            if f"{prefix}-end" in classes:
+                edges.append(("v", r, c + 1))
+    return edges
+
+
+def test_every_line_is_drawn_by_exactly_one_cell():
+    # Shared lines drawn by both neighbours showed up doubled in printed PDFs.
+    rng = np.random.default_rng(5)
+    grid = rng.integers(0, 3, size=(GRID_MAJOR_EVERY * 2 + 3, GRID_MAJOR_EVERY + 5))
+    rows, cols = grid.shape
+    for prefix in ("border", "grid-major"):
+        edges = _drawn_edges(grid, prefix)
+        assert len(edges) == len(set(edges)), prefix
+
+    # And thin lines still mark exactly the colour changes plus the outer edge.
+    expected = set()
+    for r in range(rows + 1):
+        for c in range(cols):
+            if r in (0, rows) or grid[r - 1, c] != grid[r, c]:
+                expected.add(("h", r, c))
+    for r in range(rows):
+        for c in range(cols + 1):
+            if c in (0, cols) or grid[r, c - 1] != grid[r, c]:
+                expected.add(("v", r, c))
+    assert set(_drawn_edges(grid, "border")) == expected
 
 
 class TestGridMajorLines:
@@ -104,11 +147,11 @@ class TestGridMajorLines:
         assert "grid-major-start" in get_class(grid, 2, 0).split()
         assert "grid-major-end" in get_class(grid, 2, last).split()
 
-    def test_marks_an_internal_boundary_between_two_sub_squares(self):
+    def test_marks_an_internal_boundary_between_two_sub_squares_once(self):
         grid = self._uniform_grid(GRID_MAJOR_EVERY * 2)
         mid = GRID_MAJOR_EVERY
         assert "grid-major-bottom" in get_class(grid, mid - 1, 2).split()
-        assert "grid-major-top" in get_class(grid, mid, 2).split()
+        assert "grid-major-top" not in get_class(grid, mid, 2).split()  # drawn by the cell above
 
     def test_omits_major_lines_away_from_any_boundary(self):
         grid = self._uniform_grid(GRID_MAJOR_EVERY * 2)

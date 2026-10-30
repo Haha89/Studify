@@ -21,7 +21,7 @@
     <p class="price-note">
         Bricks {{ price.format(price.bricks_low) }}&ndash;{{ price.format(price.bricks_high) }}
         (incl. {{ spare_percent }}&nbsp;% spares) &middot; {{ price.baseplate_count }}
-        {{ baseplate_label | lower }} baseplates {{ price.format(price.baseplates) }}
+        {{ baseplate_label }} baseplates {{ price.format(price.baseplates) }}
         &middot; shipping not included
     </p>
     {% if price.rare_colors %}

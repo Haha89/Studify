@@ -82,3 +82,35 @@ def test_format():
 def test_rejects_unknown_options(kwargs, match):
     with pytest.raises(ValueError, match=match):
         pricing.estimate_price({}, 1, **kwargs)
+
+
+class TestPalettes:
+    def test_buyable_is_the_default_and_drops_only_rare_colours(self):
+        from legome.models.brickstore import BrickStore
+
+        assert pricing.DEFAULT_PALETTE == "buyable"
+        buyable, everything = BrickStore.palette("buyable"), BrickStore.palette("all")
+        assert everything == BrickStore.available_bricks
+        assert {pricing.color_tier(b.id) for b in buyable} == {"common", "uncommon"}
+        assert {b.id for b in everything} - {b.id for b in buyable} == {
+            b.id for b in everything if pricing.color_tier(b.id) == "rare"
+        }
+
+    def test_common_palette(self):
+        from legome.models.brickstore import BrickStore
+
+        assert {pricing.color_tier(b.id) for b in BrickStore.palette("common")} == {"common"}
+
+    def test_rejects_unknown_palettes(self):
+        from legome.models.brickstore import BrickStore
+
+        with pytest.raises(ValueError, match="palette"):
+            BrickStore.palette("rainbow")
+
+    def test_style_palettes_avoid_rare_colours(self):
+        # A style's own palette overrides the palette choice, so it must be buyable too.
+        from legome.models.style import STYLES
+
+        for style in STYLES.values():
+            for name in style.colors or ():
+                assert pricing.color_tier(NAMES.index(name)) != "rare", name
