@@ -15,6 +15,10 @@ def process(
     plot: bool = True,
     open_in_browser: bool = True,
     full_palette: bool = False,
+    frame: int = 0,
+    colors: list[str] | None = None,
+    max_colors: int | None = None,
+    dither: bool = False,
 ) -> Canvas:
     """
     Turn an image into a LEGO mosaic and write its build guide.
@@ -26,11 +30,18 @@ def process(
     :param open_in_browser: Open the build guide once written.
     :param full_palette: Also match trans/chrome/speckle/pearl/metallic finishes,
         instead of just plain buildable colours.
+    :param frame: Width, in studs, of a black frame around the mosaic. 0 for none.
+    :param colors: Only use these LEGO colour names (e.g. the ones you already
+        own). Overrides ``full_palette``.
+    :param max_colors: Use at most this many colours, chosen to best fit the image.
+    :param dither: Blend colours the palette lacks with Floyd-Steinberg dithering.
     :return: The fitted canvas.
     """
-    canvas = Canvas(size)
+    canvas = Canvas(size, frame=frame)
     palette = BrickStore.all_bricks if full_palette else None
-    canvas.fit_from_image(path, palette=palette)
+    if colors:
+        palette = BrickStore.bricks_named(colors)
+    canvas.fit_from_image(path, palette=palette, max_colors=max_colors, dither=dither)
 
     rows, cols = canvas.shape
     distribution = canvas.get_distribution()

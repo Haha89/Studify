@@ -5,7 +5,16 @@ import pandas as pd
 import pytest
 
 from legome.models.brick import Brick
-from legome.models.utils import GRID_MAJOR_EVERY, get_class, get_distribution, make_map, nearest_color_indices
+from legome.models.utils import (
+    GRID_MAJOR_EVERY,
+    dither_indices,
+    get_class,
+    get_distribution,
+    make_map,
+    nearest_color_indices,
+    reduce_palette,
+    rgb_to_lab,
+)
 
 
 def test_get_distribution_counts_every_brick():
@@ -109,15 +118,36 @@ class TestGridMajorLines:
 
 
 class TestNearestColorIndices:
-    def test_matches_brute_force_nearest_neighbour(self):
+    def test_rgb_mode_matches_brute_force_nearest_neighbour(self):
+        rng = np.random.default_rng(0)
+        palette = rng.integers(0, 256, size=(20, 3)).astype(np.float32)
+        pixels = rng.integers(0, 256, size=(500, 3)).astype(np.uint8)
+
+        got = nearest_color_indices(pixels, palette, perceptual=False)
+
+        brute = np.argmin(np.linalg.norm(palette[:, None, :] - pixels[None, :, :].astype(np.float32), axis=2), axis=0)
+        assert np.array_equal(got, brute)
+
+    def test_perceptual_mode_matches_brute_force_in_lab(self):
         rng = np.random.default_rng(0)
         palette = rng.integers(0, 256, size=(20, 3)).astype(np.float32)
         pixels = rng.integers(0, 256, size=(500, 3)).astype(np.uint8)
 
         got = nearest_color_indices(pixels, palette)
 
-        brute = np.argmin(np.linalg.norm(palette[:, None, :] - pixels[None, :, :].astype(np.float32), axis=2), axis=0)
+        lab_palette, lab_pixels = rgb_to_lab(palette), rgb_to_lab(pixels)
+        brute = np.argmin(np.linalg.norm(lab_palette[:, None, :] - lab_pixels[None, :, :], axis=2), axis=0)
         assert np.array_equal(got, brute)
+
+    def test_perceptual_mode_can_disagree_with_rgb(self):
+        # Over many random colours, CIELAB and raw RGB must pick a different
+        # nearest colour at least some of the time, or the option does nothing.
+        rng = np.random.default_rng(4)
+        palette = rng.integers(0, 256, size=(12, 3)).astype(np.float32)
+        pixels = rng.integers(0, 256, size=(500, 3)).astype(np.uint8)
+        lab = nearest_color_indices(pixels, palette)
+        rgb = nearest_color_indices(pixels, palette, perceptual=False)
+        assert (lab != rgb).any()
 
     def test_duplicate_pixels_get_the_same_answer(self):
         palette = np.array([[0, 0, 0], [255, 255, 255]], dtype=np.float32)
@@ -136,3 +166,60 @@ class TestNearestColorIndices:
     def test_handles_an_empty_pixel_array(self):
         palette = np.array([[0, 0, 0]], dtype=np.float32)
         assert len(nearest_color_indices(np.empty((0, 3), dtype=np.uint8), palette)) == 0
+
+
+def test_rgb_to_lab_known_values():
+    lab = rgb_to_lab(np.array([[0, 0, 0], [255, 255, 255]]))
+    assert lab[0] == pytest.approx([0, 0, 0], abs=0.5)
+    assert lab[1] == pytest.approx([100, 0, 0], abs=0.5)
+
+
+class TestDitherIndices:
+    def test_exact_palette_colours_are_left_alone(self):
+        palette = np.array([[0, 0, 0], [255, 255, 255]], dtype=np.float32)
+        img = np.zeros((4, 4, 3), dtype=np.uint8)
+        img[:, 2:] = 255
+        assert np.array_equal(dither_indices(img, palette), np.array([[0, 0, 1, 1]] * 4))
+
+    def test_mid_grey_becomes_a_mix_of_black_and_white(self):
+        palette = np.array([[0, 0, 0], [255, 255, 255]], dtype=np.float32)
+        grey = np.full((16, 16, 3), 119, dtype=np.uint8)  # ~50% lightness
+        indices = dither_indices(grey, palette)
+        # Plain nearest-colour would make it one flat colour; dithering mixes both.
+        assert 0.3 < indices.mean() < 0.7
+
+    def test_zero_strength_is_plain_nearest_colour(self):
+        rng = np.random.default_rng(2)
+        palette = rng.integers(0, 256, size=(6, 3)).astype(np.float32)
+        img = rng.integers(0, 256, size=(8, 8, 3)).astype(np.uint8)
+        plain = nearest_color_indices(img.reshape(-1, 3), palette).reshape(8, 8)
+        assert np.array_equal(dither_indices(img, palette, strength=0), plain)
+
+
+class TestReducePalette:
+    PALETTE = np.array([[0, 0, 0], [255, 255, 255], [200, 0, 0], [0, 0, 200], [210, 10, 10]], dtype=np.float32)
+
+    def _image(self):
+        img = np.zeros((10, 10, 3), dtype=np.uint8)  # mostly black
+        img[:, 6:] = (255, 255, 255)
+        img[0, 0] = (200, 0, 0)  # a single red pixel
+        img[1, 0] = (0, 0, 200)  # a single blue pixel
+        return img
+
+    def test_keeps_at_most_max_colors(self):
+        assert len(reduce_palette(self._image(), self.PALETTE, 2)) == 2
+
+    def test_drops_the_least_used_colours_first(self):
+        assert list(reduce_palette(self._image(), self.PALETTE, 2)) == [0, 1]
+
+    def test_never_adds_unused_colours(self):
+        assert list(reduce_palette(self._image(), self.PALETTE, 10)) == [0, 1, 2, 3]
+
+    def test_keep_survives_even_when_rarely_used(self):
+        assert list(reduce_palette(self._image(), self.PALETTE, 2, keep=(3,))) == [0, 3]
+
+    def test_rejects_bad_limits(self):
+        with pytest.raises(ValueError, match="at least 1"):
+            reduce_palette(self._image(), self.PALETTE, 0)
+        with pytest.raises(ValueError, match="cannot keep"):
+            reduce_palette(self._image(), self.PALETTE, 1, keep=(0, 1))

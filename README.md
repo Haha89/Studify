@@ -24,6 +24,12 @@ uv run legome pics/dog.png --size 4
 # Write the guide elsewhere, and skip the preview window and the browser
 uv run legome pics/vador.png -s 2 -o ./guides --no-plot --no-open
 
+# A 2-stud black frame around the picture, for a finished, framed look
+uv run legome pics/alex.jpg -s 3 --frame 2
+
+# A punchy, 8-colour version: cheaper to buy, and more pop-art
+uv run legome pics/dog.png -s 3 --max-colors 8
+
 # Graphical interface (needs `uv sync --all-extras`)
 uv run legome --gui
 ```
@@ -35,6 +41,10 @@ uv run legome --gui
 | `-o`, `--output-dir` | Where to write the guide (default `./output`). |
 | `--no-plot` | Skip the matplotlib preview. |
 | `--no-open` | Do not open the guide in a browser. |
+| `--frame` | Black frame this many studs wide around the mosaic (default `0`, max `15`). |
+| `--colors` | Only use these LEGO colours, comma-separated, e.g. `"Black,White,Red"`. |
+| `--max-colors` | Use at most N colours, chosen to best fit the image. |
+| `--dither` | Blend colours the palette lacks with Floyd-Steinberg dithering. |
 | `--gui` | Launch the graphical interface. |
 
 The guide lands at `<output-dir>/<image-name>.html`. Open it and print to PDF — the
@@ -60,8 +70,10 @@ PdfCreator(canvas).generate_html(output_dir="output")
 
 1. **Resize** — the image is scaled so its longest side is `size * 32` studs, with both
    sides rounded down to whole baseplates (`Canvas.resize_img`).
-2. **Quantise** — each pixel's Euclidean RGB distance to all 135 palette colours is
-   computed at once, and the nearest colour wins (`Canvas.fit_from_image`).
+2. **Quantise** — each pixel is matched to the palette colour that *looks* closest
+   (Euclidean distance in CIELAB, not raw RGB), optionally after narrowing the palette
+   to the N colours that best fit the image, and optionally with Floyd-Steinberg
+   dithering (`Canvas.fit_from_image`).
 3. **Split** — the mosaic is cut into 32x32 sub-canvases, one per baseplate, left to right
    and top to bottom (`PdfCreator.get_bases`).
 4. **Render** — each baseplate becomes an HTML table of brick ids, bordered around every

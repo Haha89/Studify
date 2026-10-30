@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from itertools import chain
 
+import cv2
 import numpy as np
 import pandas as pd
 
@@ -16,10 +17,29 @@ CHUNK_SIZE = 8192
 GRID_MAJOR_EVERY = 8
 
 
-def nearest_color_indices(pixels: np.ndarray, palette: np.ndarray, chunk_size: int = CHUNK_SIZE) -> np.ndarray:
+# Floyd-Steinberg error diffusion: (row offset, column offset along the scan
+# direction, share of the error).
+_DITHER_WEIGHTS = ((0, 1, 7 / 16), (1, -1, 3 / 16), (1, 0, 5 / 16), (1, 1, 1 / 16))
+
+
+def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
+    """Convert (N, 3) RGB colours (0-255) to (N, 3) float32 CIELAB (L in 0-100).
+
+    Euclidean distance in CIELAB tracks how different two colours *look* far
+    better than it does in RGB, notably for skin tones, greys and dark colours.
+    """
+    rgb = np.asarray(rgb, dtype=np.float32).reshape(-1, 1, 3) / 255
+    if not len(rgb):
+        return np.empty((0, 3), dtype=np.float32)
+    return cv2.cvtColor(rgb, cv2.COLOR_RGB2Lab).reshape(-1, 3)
+
+
+def nearest_color_indices(
+    pixels: np.ndarray, palette: np.ndarray, chunk_size: int = CHUNK_SIZE, perceptual: bool = True
+) -> np.ndarray:
     """
     Map each pixel to the index of its nearest colour in a palette, by squared
-    Euclidean RGB distance.
+    Euclidean distance in CIELAB (or in raw RGB if ``perceptual`` is False).
 
     Real images are full of exact-duplicate pixels, especially once resizing has
     rounded them to whole RGB values, so the distinct colours are deduplicated
@@ -31,9 +51,10 @@ def nearest_color_indices(pixels: np.ndarray, palette: np.ndarray, chunk_size: i
 
     :param pixels: (N, 3) array of RGB pixels.
     :param palette: (K, 3) array of RGB palette colours.
+    :param perceptual: Compare colours in CIELAB rather than raw RGB.
     :return: (N,) array of indices into ``palette``.
     """
-    palette = palette.astype(np.float32, copy=False)
+    palette = rgb_to_lab(palette) if perceptual else palette.astype(np.float32, copy=False)
     # ||p - c||^2 = ||p||^2 - 2 p.c + ||c||^2 ; ||p||^2 is the same across every
     # palette entry for a given pixel, so it can't change which is nearest and is
     # dropped. The remaining term is one matrix multiply per chunk.
@@ -41,7 +62,7 @@ def nearest_color_indices(pixels: np.ndarray, palette: np.ndarray, chunk_size: i
 
     keys, pixel_to_key = np.unique(pixels, axis=0, return_inverse=True)
     pixel_to_key = pixel_to_key.reshape(-1)  # (N, 1) on numpy < 2.0.1; flatten either way.
-    keys = keys.astype(np.float32, copy=False)
+    keys = rgb_to_lab(keys) if perceptual else keys.astype(np.float32, copy=False)
 
     key_indices = np.empty(len(keys), dtype=np.intp)
     for start in range(0, len(keys), chunk_size):
@@ -49,6 +70,77 @@ def nearest_color_indices(pixels: np.ndarray, palette: np.ndarray, chunk_size: i
         dist2 = palette_sq - 2 * chunk @ palette.T
         key_indices[start : start + chunk_size] = np.argmin(dist2, axis=1)
     return key_indices[pixel_to_key]
+
+
+def dither_indices(pixels: np.ndarray, palette: np.ndarray, strength: float = 1.0) -> np.ndarray:
+    """
+    Map an image to palette indices with Floyd-Steinberg error diffusion: each
+    pixel's rounding error is pushed onto its unvisited neighbours, so an area in
+    a colour the palette lacks becomes a mix of nearby colours that averages out
+    to it from a distance. Works in CIELAB and scans rows in alternating
+    directions (serpentine), which avoids diagonal streaks.
+
+    :param pixels: (H, W, 3) RGB image.
+    :param palette: (K, 3) array of RGB palette colours.
+    :param strength: Share of the error to diffuse; 1.0 is classic Floyd-Steinberg.
+    :return: (H, W) array of indices into ``palette``.
+    """
+    height, width = pixels.shape[:2]
+    lab = rgb_to_lab(pixels.reshape(-1, 3)).reshape(height, width, 3).astype(np.float64)
+    palette_lab = rgb_to_lab(palette).astype(np.float64)
+    indices = np.empty((height, width), dtype=np.intp)
+
+    for y in range(height):
+        step = 1 if y % 2 == 0 else -1
+        for x in range(width) if step == 1 else range(width - 1, -1, -1):
+            pixel = lab[y, x]
+            index = int(np.argmin(np.sum((palette_lab - pixel) ** 2, axis=1)))
+            indices[y, x] = index
+            error = (pixel - palette_lab[index]) * strength
+            for dy, dx, share in _DITHER_WEIGHTS:
+                ny, nx = y + dy, x + dx * step
+                if ny < height and 0 <= nx < width:
+                    lab[ny, nx] += error * share
+    return indices
+
+
+def reduce_palette(pixels: np.ndarray, palette: np.ndarray, max_colors: int, keep: tuple[int, ...] = ()) -> np.ndarray:
+    """
+    Pick the ``max_colors`` palette colours that best represent an image.
+
+    Starts from every colour the image would use with the full palette, then
+    greedily drops whichever colour is cheapest to lose -- the smallest increase
+    in total CIELAB error once its pixels fall back to their runner-up colour --
+    until ``max_colors`` remain. Unlike clustering the image (k-means) and then
+    snapping the centroids to bricks, every step only considers real colours.
+
+    :param pixels: (..., 3) RGB image or pixel array.
+    :param palette: (K, 3) array of RGB palette colours.
+    :param max_colors: How many colours to keep, at least 1.
+    :param keep: Palette indices that must survive (e.g. black for a frame).
+    :return: Sorted array of at most ``max_colors`` indices into ``palette``.
+    """
+    if max_colors < 1:
+        raise ValueError(f"max_colors must be at least 1, got {max_colors}")
+    if len(set(keep)) > max_colors:
+        raise ValueError(f"cannot keep {len(set(keep))} colours with max_colors={max_colors}")
+
+    keys, counts = np.unique(pixels.reshape(-1, 3), axis=0, return_counts=True)
+    keys_lab, palette_lab = rgb_to_lab(keys), rgb_to_lab(palette)
+    dist = np.sum((keys_lab[:, None, :] - palette_lab[None, :, :]) ** 2, axis=2)
+
+    selected = sorted(set(np.argmin(dist, axis=1).tolist()) | set(keep))
+    rows = np.arange(len(keys))
+    while len(selected) > max_colors:
+        sub = dist[:, selected]
+        two_best = np.argpartition(sub, 1, axis=1)[:, :2]
+        first, second = sub[rows, two_best[:, 0]], sub[rows, two_best[:, 1]]
+        best = np.where(first <= second, two_best[:, 0], two_best[:, 1])
+        # The cost of dropping each colour: its pixels move to their runner-up.
+        cost = np.bincount(best, weights=counts * np.abs(second - first), minlength=len(selected))
+        cost[[i for i, index in enumerate(selected) if index in keep]] = np.inf
+        selected.pop(int(np.argmin(cost)))
+    return np.array(selected, dtype=np.intp)
 
 
 def get_distribution(bricks: list[list[Brick]]) -> dict[int, int]:

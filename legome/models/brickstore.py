@@ -44,6 +44,18 @@ class BrickStore:
         brick for brick, name in zip(all_bricks, COLORS, strict=True) if _is_buildable(name)
     ]
 
+    @classmethod
+    def bricks_named(cls, names: list[str]) -> list[Brick]:
+        """Return the bricks for the given colour names (case-insensitive), in order.
+
+        :raises ValueError: listing every name that isn't a palette colour.
+        """
+        by_name = {name.lower(): brick for name, brick in zip(COLORS, cls.all_bricks, strict=True)}
+        unknown = [name for name in names if name.strip().lower() not in by_name]
+        if unknown:
+            raise ValueError(f"Unknown colour(s): {', '.join(unknown)}")
+        return list(dict.fromkeys(by_name[name.strip().lower()] for name in names))
+
     @staticmethod
     def get_price_tile() -> float:
         """Return the price of one LEGO element in USD."""
