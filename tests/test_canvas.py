@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
 
-from legome.models.brickstore import PRICE_BASE_USD, PRICE_TILE_USD
-from legome.models.canvas import Canvas
+from legome.models.brickstore import BrickStore
+from legome.models.canvas import FRAME_COLOR, Canvas
 from legome.models.static import DIM_BASE
 
 
@@ -21,7 +22,8 @@ def test_rejects_a_canvas_smaller_than_one_baseplate(bases):
 def test_empty_canvas_has_no_shape_cost_or_bricks():
     canvas = Canvas(1)
     assert canvas.shape == (0, 0)
-    assert canvas.get_cost() == 0
+    assert canvas.baseplate_count == 0
+    assert canvas.get_price().high == 0
     assert canvas.get_distribution() == {}
 
 
@@ -54,10 +56,17 @@ def test_shape_and_brick_ids(make_canvas):
     assert np.array_equal(canvas.get_brick_ids(), np.array([[1, 2, 3], [4, 5, 6]]))
 
 
-def test_cost_charges_per_stud_plus_a_share_of_the_baseplate(make_canvas):
-    canvas = make_canvas([[1, 1], [1, 1]])
-    expected = 4 * (PRICE_TILE_USD + PRICE_BASE_USD / (DIM_BASE * DIM_BASE))
-    assert canvas.get_cost() == pytest.approx(expected)
+def test_baseplate_count_rounds_partial_plates_up(make_canvas):
+    assert make_canvas([[1, 1], [1, 1]]).baseplate_count == 1
+    assert make_canvas([[1] * (DIM_BASE + 1)] * DIM_BASE).baseplate_count == 2
+
+
+def test_price_covers_the_bricks_and_the_baseplates(make_canvas):
+    canvas = make_canvas([[1] * DIM_BASE] * DIM_BASE)  # one baseplate of brick #1
+    price = canvas.get_price("official", "EUR")
+    assert price.baseplate_count == 1
+    assert price.low == pytest.approx(price.bricks_low + price.baseplates)
+    assert price.high > price.low > price.baseplates > 0
 
 
 def test_to_html_contains_a_table_of_brick_ids(make_canvas):
@@ -118,6 +127,44 @@ class TestResize:
         resized = canvas.resize_img(np.full((64, 128, 3), 255, dtype=np.uint8))
         assert resized.shape[:2] == (32, 64)
         assert np.all(resized == 255)  # no letterbox bars anywhere
+
+
+class TestFrame:
+    @pytest.mark.parametrize("frame", [-1, DIM_BASE // 2])
+    def test_rejects_a_frame_too_wide_for_a_baseplate(self, frame):
+        with pytest.raises(ValueError, match="frame"):
+            Canvas(1, frame=frame)
+
+    @pytest.mark.parametrize("shape", [(64, 128), (128, 64), (100, 237), (50, 50)])
+    def test_frame_is_uniform_on_all_four_sides(self, shape):
+        canvas = Canvas(2, frame=2)
+        resized = canvas.resize_img(np.full((*shape, 3), 255, dtype=np.uint8))
+
+        height, width = resized.shape[:2]
+        assert height % DIM_BASE == 0 and width % DIM_BASE == 0
+        assert max(height, width) == 2 * DIM_BASE
+        assert np.all(resized[:2] == FRAME_COLOR) and np.all(resized[-2:] == FRAME_COLOR)
+        assert np.all(resized[:, :2] == FRAME_COLOR) and np.all(resized[:, -2:] == FRAME_COLOR)
+        assert np.all(resized[2:-2, 2:-2] == 255)  # image fills the inside, no letterbox bars
+
+    def test_image_is_centre_cropped_to_fit_inside_the_frame(self):
+        # A wide 32x96 source into one baseplate: the middle third (white)
+        # survives, the black left and right thirds are cropped away.
+        src = np.zeros((32, 96, 3), dtype=np.uint8)
+        src[:, 32:64] = 255
+        resized = Canvas(1, frame=1).resize_img(src)
+
+        assert resized.shape[:2] == (DIM_BASE, DIM_BASE)
+        assert np.all(resized[1:-1, 1:-1] == 255)
+
+    def test_frame_maps_to_black_bricks(self, red_blue_image):
+        canvas = Canvas(1, frame=3)
+        canvas.fit_from_image(red_blue_image)
+        ids = canvas.get_brick_ids()
+        black = canvas.store.available_bricks[0].id  # "Black" is the first colour
+        assert np.all(ids[:3] == black) and np.all(ids[-3:] == black)
+        assert np.all(ids[:, :3] == black) and np.all(ids[:, -3:] == black)
+        assert not np.all(ids[3:-3, 3:-3] == black)
 
 
 class TestToPreviewImage:
@@ -242,3 +289,66 @@ class TestFitFromImage:
         canvas = Canvas(1)
         canvas.fit_from_image(red_blue_image)
         assert "Canvas L32" in repr(canvas)
+
+
+class TestPaletteOptions:
+    def test_max_colors_caps_the_distinct_bricks(self, tmp_path):
+        rng = np.random.default_rng(3)
+        path = tmp_path / "noise.png"
+        cv2.imwrite(str(path), rng.integers(0, 256, size=(64, 64, 3), dtype=np.uint8))
+        canvas = Canvas(1)
+        canvas.fit_from_image(path, max_colors=5)
+        assert len(canvas.get_distribution()) <= 5
+
+    def test_max_colors_keeps_the_frame_black(self, tmp_path):
+        path = tmp_path / "white.png"
+        cv2.imwrite(str(path), np.full((64, 64, 3), 255, dtype=np.uint8))
+        canvas = Canvas(1, frame=1)
+        canvas.fit_from_image(path, max_colors=1)
+        assert set(np.unique(canvas.get_brick_ids())) == {BrickStore.bricks_named(["Black"])[0].id}
+
+    def test_dither_leaves_the_letterbox_untouched(self, tmp_path):
+        path = tmp_path / "grey.png"
+        cv2.imwrite(str(path), np.full((64, 32, 3), 119, dtype=np.uint8))  # tall: letterboxed
+        palette = BrickStore.bricks_named(["Black", "White"])
+        canvas = Canvas(1)
+        canvas.fit_from_image(path, palette=palette, dither=True)
+
+        top, bottom, left, right = canvas.content_box
+        ids = canvas.get_brick_ids()
+        black, white = palette[0].id, palette[1].id
+        assert np.all(ids[:, :left] == black) and np.all(ids[:, right:] == black)
+        inside = ids[top:bottom, left:right]
+        assert (inside == black).any() and (inside == white).any()
+
+    def test_dither_leaves_the_frame_untouched(self, tmp_path):
+        path = tmp_path / "grey.png"
+        cv2.imwrite(str(path), np.full((64, 64, 3), 119, dtype=np.uint8))
+        palette = BrickStore.bricks_named(["Black", "White"])
+        canvas = Canvas(1, frame=2)
+        canvas.fit_from_image(path, palette=palette, dither=True)
+
+        ids = canvas.get_brick_ids()
+        black = palette[0].id
+        assert np.all(ids[:2] == black) and np.all(ids[-2:] == black)
+        assert np.all(ids[:, :2] == black) and np.all(ids[:, -2:] == black)
+
+
+def test_bricks_named_is_case_insensitive_and_deduplicated():
+    bricks = BrickStore.bricks_named(["black", " White", "BLACK"])
+    assert [b.color for b in bricks] == [(5, 19, 29), (255, 255, 255)]
+
+
+def test_bricks_named_lists_every_unknown_name():
+    with pytest.raises(ValueError, match="Foo, Bar"):
+        BrickStore.bricks_named(["Black", "Foo", "Bar"])
+
+
+def test_fit_from_image_reads_non_ascii_paths(tmp_path):
+    # cv2.imread can't open these on Windows; Canvas must still manage.
+    path = tmp_path / "photo été ü.png"
+    ok, png = cv2.imencode(".png", np.full((32, 32, 3), 255, dtype=np.uint8))
+    path.write_bytes(png.tobytes())
+    canvas = Canvas(1)
+    canvas.fit_from_image(path)
+    assert canvas.shape == (DIM_BASE, DIM_BASE)

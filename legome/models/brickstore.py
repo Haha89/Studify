@@ -1,11 +1,6 @@
 from legome.models.brick import Brick
 from legome.models.static import COLORS
 
-# Price of one 1x1 LEGO plate in USD, from the LEGO Pick-a-Brick store.
-PRICE_TILE_USD = 0.03
-# Price of one 32x32 LEGO baseplate in USD, as found on Amazon.
-PRICE_BASE_USD = 2.0
-
 # Name prefixes/entries that aren't ordinary, buildable LEGO colors: placeholders
 # ("Unknown", "[No Color]") and finishes nearest-colour matching shouldn't reach for
 # unless asked (transparent, chrome, speckled, glitter, pearl, metallic, glow-in-dark).
@@ -32,7 +27,7 @@ def _is_buildable(name: str) -> bool:
 
 
 class BrickStore:
-    """The palette of bricks that can be ordered, and what they cost."""
+    """The palette of bricks that can be ordered (prices: see ``pricing``)."""
 
     COLORS = COLORS
 
@@ -44,12 +39,14 @@ class BrickStore:
         brick for brick, name in zip(all_bricks, COLORS, strict=True) if _is_buildable(name)
     ]
 
-    @staticmethod
-    def get_price_tile() -> float:
-        """Return the price of one LEGO element in USD."""
-        return PRICE_TILE_USD
+    @classmethod
+    def bricks_named(cls, names: list[str]) -> list[Brick]:
+        """Return the bricks for the given colour names (case-insensitive), in order.
 
-    @staticmethod
-    def get_price_base() -> float:
-        """Return the price of one 32x32 LEGO baseplate in USD."""
-        return PRICE_BASE_USD
+        :raises ValueError: listing every name that isn't a palette colour.
+        """
+        by_name = {name.lower(): brick for name, brick in zip(COLORS, cls.all_bricks, strict=True)}
+        unknown = [name for name in names if name.strip().lower() not in by_name]
+        if unknown:
+            raise ValueError(f"Unknown colour(s): {', '.join(unknown)}")
+        return list(dict.fromkeys(by_name[name.strip().lower()] for name in names))

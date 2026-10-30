@@ -43,3 +43,46 @@ def test_gui_flag_launches_the_gui_without_an_image(monkeypatch):
 
     assert main(["--gui"]) == 0
     assert launched == [True]
+
+
+def test_rejects_an_oversized_frame(red_blue_image, capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([str(red_blue_image), "--frame", "16", "--no-plot", "--no-open"])
+    assert exc.value.code == 2
+    assert "--frame" in capsys.readouterr().err
+
+
+def test_rejects_unknown_colour_names(red_blue_image, capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([str(red_blue_image), "--colors", "Black,Purplish Unicorn", "--no-plot", "--no-open"])
+    assert exc.value.code == 2
+    assert "Purplish Unicorn" in capsys.readouterr().err
+
+
+def test_colors_and_full_palette_are_exclusive(red_blue_image):
+    with pytest.raises(SystemExit):
+        main([str(red_blue_image), "--colors", "Black", "--full-palette", "--no-plot", "--no-open"])
+
+
+def test_palette_options_end_to_end(red_blue_image, tmp_path, capsys):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    assert main([*args, "--colors", "red, blue,Black", "--max-colors", "2", "--dither"]) == 0
+    assert "Colors used: 2" in capsys.readouterr().out
+
+
+def test_rejects_an_unknown_style(red_blue_image):
+    with pytest.raises(SystemExit):
+        main([str(red_blue_image), "--style", "baroque", "--no-plot", "--no-open"])
+
+
+def test_style_end_to_end(red_blue_image, tmp_path):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    assert main([*args, "--style", "comic", "--frame", "1"]) == 0
+
+
+def test_price_options_end_to_end(red_blue_image, tmp_path, capsys):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    assert main([*args, "--baseplates", "compatible", "--currency", "USD"]) == 0
+    out = capsys.readouterr().out
+    assert "Total estimated cost:" in out and "$" in out
+    assert "compatible baseplates" in out and "shipping not included" in out

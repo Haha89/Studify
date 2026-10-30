@@ -16,8 +16,20 @@
         <div><dt>Baseplates</dt><dd>{{ bases | length }}</dd></div>
         <div><dt>Colors</dt><dd>{{ total_colors }}</dd></div>
         <div><dt>Bricks</dt><dd>{{ total_bricks }}</dd></div>
-        <div><dt>Est. cost</dt><dd>${{ "%.2f" | format(total_cost) }}</dd></div>
+        <div><dt>Est. cost</dt><dd>{{ price.format() }}</dd></div>
     </dl>
+    <p class="price-note">
+        Bricks {{ price.format(price.bricks_low) }}&ndash;{{ price.format(price.bricks_high) }}
+        (incl. {{ spare_percent }}&nbsp;% spares) &middot; {{ price.baseplate_count }}
+        {{ baseplate_label | lower }} baseplates {{ price.format(price.baseplates) }}
+        &middot; shipping not included
+    </p>
+    {% if price.rare_colors %}
+    <p class="price-warning">
+        Rare colours, pricey or hard to find in bulk:
+        {% for name, count in price.rare_colors.items() %}{{ name }} &times;&nbsp;{{ count }}{% if not loop.last %}, {% endif %}{% endfor %}
+    </p>
+    {% endif %}
 </header>
 
 {% if original_image or mosaic_image %}
@@ -49,7 +61,12 @@
             <h3>Bricks needed</h3>
             <ul class="brick-list">
                 {% for brick_id, count in base.distribution.items() %}
-                <li><span class="brick-id">#{{ brick_id }}</span> &times; {{ count }}</li>
+                {% set color = color_by_id[brick_id] %}
+                <li title="{{ color.name }}">
+                    <span class="swatch" style="background: rgb{{ color.rgb }}"></span>
+                    <span class="brick-count"><span class="brick-id">#{{ brick_id }}</span> &times; {{ count }}</span>
+                    <span class="brick-name">{{ color.name }}</span>
+                </li>
                 {% endfor %}
             </ul>
         </div>
@@ -61,7 +78,7 @@
     <h2>Colors used</h2>
     <table class="color-table">
         <thead>
-        <tr><th>Id</th><th>Swatch</th><th>Name</th><th>RGB</th><th>Bricks</th></tr>
+        <tr><th>Id</th><th>Swatch</th><th>Name</th><th>RGB</th><th>Availability</th><th>Bricks</th></tr>
         </thead>
         <tbody>
         {% for color in colors %}
@@ -70,6 +87,7 @@
             <td><span class="swatch" style="background: rgb{{ color.rgb }}"></span></td>
             <td>{{ color.name }}</td>
             <td>{{ color.rgb }}</td>
+            <td><span class="tier tier-{{ color.tier }}">{{ color.tier }}</span></td>
             <td>{{ color.count }}</td>
         </tr>
         {% endfor %}

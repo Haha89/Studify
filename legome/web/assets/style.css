@@ -1,0 +1,55 @@
+/* LegoMe web app: the few things Mantine doesn't style. Dash serves every file
+   in this folder automatically. */
+
+body {
+    background: #f6f7f9;
+}
+
+/* Step 1: the upload drop zone. */
+.dropzone {
+    align-items: center;
+    background: #fff;
+    border: 2px dashed #d5d8de;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    min-height: 130px;
+    padding: 1.5rem;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone:hover {
+    background: #ffe9ec;
+    border-color: #c8102e;
+}
+
+.status {
+    margin-top: 1rem;
+}
+
+.status:empty {
+    margin: 0;
+}
+
+/* Step 3: style cards are picked by clicking anywhere on them. */
+.style-card {
+    border-radius: 16px;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.style-card:hover {
+    transform: translateY(-3px);
+}
+
+.style-card.selected {
+    box-shadow: 0 0 0 3px #c8102e, 0 8px 24px rgba(200, 16, 46, 0.18);
+}
+
+/* One pixel per brick: keep the edges crisp when scaled up. */
+.style-image {
+    display: block;
+    image-rendering: pixelated;
+    width: 100%;
+}
