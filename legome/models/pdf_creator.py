@@ -102,6 +102,7 @@ class PdfCreator:
         template = env.get_template("template.html")
         rows, cols = self.canvas.shape
         distribution = self.canvas.get_distribution()
+        colors = self.get_used_colors()
         html_out = template.render(
             title=f"LegoMe: {self.canvas.source}",
             original_image=_data_uri_from_file(self.canvas.source_path) if self.canvas.source_path else None,
@@ -111,7 +112,8 @@ class PdfCreator:
             total_bricks=sum(distribution.values()),
             total_cost=self.canvas.get_cost(),
             bases=self.get_bases_maps_and_repartition(),
-            colors=self.get_used_colors(),
+            colors=colors,
+            color_by_id={color["id"]: color for color in colors},
         )
 
         output_dir = Path(output_dir) if output_dir is not None else Path.cwd() / OUTPUT_DIR_NAME

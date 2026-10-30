@@ -49,7 +49,12 @@
             <h3>Bricks needed</h3>
             <ul class="brick-list">
                 {% for brick_id, count in base.distribution.items() %}
-                <li><span class="brick-id">#{{ brick_id }}</span> &times; {{ count }}</li>
+                {% set color = color_by_id[brick_id] %}
+                <li title="{{ color.name }}">
+                    <span class="swatch" style="background: rgb{{ color.rgb }}"></span>
+                    <span class="brick-count"><span class="brick-id">#{{ brick_id }}</span> &times; {{ count }}</span>
+                    <span class="brick-name">{{ color.name }}</span>
+                </li>
                 {% endfor %}
             </ul>
         </div>

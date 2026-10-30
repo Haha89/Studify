@@ -80,8 +80,9 @@ class TestGenerateHtml:
         # two_base_canvas only ever uses brick ids 1 and 2.
         names = list(COLORS)
         used_name, unused_name = names[1], names[0]
-        assert html.count(f">{used_name}<") == 1
-        assert f">{names[2]}<" in html
+        color_table = html[html.index('class="color-table"') :]
+        assert color_table.count(f"<td>{used_name}</td>") == 1
+        assert f"<td>{names[2]}</td>" in color_table
         assert f">{unused_name}<" not in html
 
     def test_color_reference_shows_how_many_bricks_of_each_colour(self, html):
@@ -193,3 +194,12 @@ class TestLocalColorIds:
         assert '<span class="brick-id">#2</span>' in html
         assert '<span class="brick-id">#5</span>' not in html
         assert '<span class="brick-id">#50</span>' not in html
+
+    def test_bricks_needed_shows_each_colour_swatch_and_name(self, sparse_canvas, tmp_path):
+        html = PdfCreator(sparse_canvas).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
+        names = list(COLORS)
+        for palette_id in (5, 50):
+            name, rgb = names[palette_id], COLORS[names[palette_id]]
+            assert f'<li title="{name}">' in html
+            assert f'<span class="swatch" style="background: rgb{rgb}"></span>' in html
+            assert f'<span class="brick-name">{name}</span>' in html
