@@ -69,6 +69,18 @@ def main(argv: list[str] | None = None) -> int:
         metavar="STUDS",
         help="Add a black frame this many studs wide around the mosaic (default: no frame).",
     )
+    parser.add_argument(
+        "--baseplates",
+        choices=["official", "compatible"],
+        default="official",
+        help="Price official LEGO baseplates or cheaper compatible ones (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--currency",
+        choices=["EUR", "USD"],
+        default="EUR",
+        help="Currency of the price estimate (default: %(default)s).",
+    )
     parser.add_argument("--gui", action="store_true", help="Launch the graphical interface instead.")
     args = parser.parse_args(argv)
 
@@ -102,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
         max_colors=args.max_colors,
         dither=args.dither,
         style=args.style,
+        baseplates=args.baseplates,
+        currency=args.currency,
     )
     return 0
 

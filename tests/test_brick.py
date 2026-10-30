@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from legome.models.brick import Brick
-from legome.models.brickstore import PRICE_BASE_USD, PRICE_TILE_USD, BrickStore
+from legome.models.brickstore import BrickStore
 from legome.models.static import COLORS
 
 
@@ -72,8 +72,3 @@ def test_available_bricks_keep_plain_colours_like_black_and_blue():
     available_ids = {brick.id for brick in BrickStore.available_bricks}
     assert names_to_ids["Black"] in available_ids
     assert names_to_ids["Blue"] in available_ids
-
-
-def test_store_prices():
-    assert BrickStore.get_price_tile() == PRICE_TILE_USD
-    assert BrickStore.get_price_base() == PRICE_BASE_USD

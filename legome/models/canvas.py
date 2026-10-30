@@ -9,6 +9,7 @@ import pandas as pd
 
 from legome.models.brick import Brick
 from legome.models.brickstore import BrickStore
+from legome.models.pricing import PriceEstimate, estimate_price
 from legome.models.static import COLORS, DIM_BASE
 from legome.models.style import Style, outline_mask, retouch
 from legome.models.utils import (
@@ -16,6 +17,7 @@ from legome.models.utils import (
     get_distribution,
     make_map,
     nearest_color_indices,
+    read_image,
     reduce_palette,
     rgb_to_lab,
 )
@@ -79,11 +81,16 @@ class Canvas:
         """Return the canvas as a 2D array of brick ids."""
         return np.array([[brick.id for brick in row] for row in self.bricks], dtype=int)
 
-    def get_cost(self) -> float:
-        """Return the estimated cost of the build in USD, bricks plus baseplates."""
+    @property
+    def baseplate_count(self) -> int:
+        """Number of 32x32 baseplates the canvas covers (a partial one counts whole)."""
         rows, cols = self.shape
-        price_per_stud = self.store.get_price_tile() + self.store.get_price_base() / (DIM_BASE * DIM_BASE)
-        return rows * cols * price_per_stud
+        return -(-rows // DIM_BASE) * -(-cols // DIM_BASE)  # Ceiling divisions.
+
+    def get_price(self, baseplate_kind: str = "official", currency: str = "EUR") -> PriceEstimate:
+        """Return the estimated price range of the build: bricks by colour rarity,
+        spares and baseplates (see ``pricing.estimate_price``)."""
+        return estimate_price(self.get_distribution(), self.baseplate_count, baseplate_kind, currency)
 
     def to_pixel_array(self) -> np.ndarray:
         """Return the canvas as an (rows, cols, 3) uint8 RGB array, one pixel per brick:
@@ -225,7 +232,7 @@ class Canvas:
         :param style: Retouch the picture first (see ``style.STYLES``). Its
             ``colors`` are ignored here; pick the palette with ``palette``.
         """
-        src = cv2.imread(str(path))
+        src = read_image(path)
         if src is None:
             raise FileNotFoundError(f"Could not read image: {path}")
         self.source_path = Path(path)

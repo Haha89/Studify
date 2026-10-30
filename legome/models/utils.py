@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from itertools import chain
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -20,6 +21,17 @@ GRID_MAJOR_EVERY = 8
 # Floyd-Steinberg error diffusion: (row offset, column offset along the scan
 # direction, share of the error).
 _DITHER_WEIGHTS = ((0, 1, 7 / 16), (1, -1, 3 / 16), (1, 0, 5 / 16), (1, 1, 1 / 16))
+
+
+def read_image(path: str | Path) -> np.ndarray | None:
+    """Read an image file as a BGR array, like ``cv2.imread``, or None if it
+    isn't one. Goes through numpy because ``cv2.imread`` can't open non-ASCII
+    paths on Windows (e.g. a photo named "été.jpg")."""
+    try:
+        data = np.fromfile(str(path), dtype=np.uint8)
+    except OSError:
+        return None
+    return cv2.imdecode(data, cv2.IMREAD_COLOR) if data.size else None
 
 
 def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:

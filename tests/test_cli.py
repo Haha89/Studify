@@ -78,3 +78,11 @@ def test_rejects_an_unknown_style(red_blue_image):
 def test_style_end_to_end(red_blue_image, tmp_path):
     args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
     assert main([*args, "--style", "comic", "--frame", "1"]) == 0
+
+
+def test_price_options_end_to_end(red_blue_image, tmp_path, capsys):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    assert main([*args, "--baseplates", "compatible", "--currency", "USD"]) == 0
+    out = capsys.readouterr().out
+    assert "Total estimated cost:" in out and "$" in out
+    assert "compatible baseplates" in out and "shipping not included" in out

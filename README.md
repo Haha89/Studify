@@ -12,7 +12,7 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
 
 ```bash
 uv sync                  # core dependencies
-uv sync --all-extras     # also install the optional GUI (customtkinter)
+uv sync --all-extras     # also install the optional GUI and web app
 ```
 
 ## Use
@@ -54,6 +54,18 @@ uv run legome --gui
 
 The guide lands at `<output-dir>/<image-name>.html`. Open it and print to PDF — the
 stylesheet puts one baseplate on each page.
+
+### Web app
+
+```bash
+uv sync --extra web
+uv run legome-web        # then open http://127.0.0.1:8050
+```
+
+Upload a photo (or paste a link), pick the size, frame and colour limit, compare the
+natural, pop and comic renders side by side, and download the chosen one as a PDF guide.
+PDFs are printed by a headless Chrome, Chromium or Edge; set `LEGOME_BROWSER` to point at
+one if it isn't found automatically.
 
 ### As a library
 

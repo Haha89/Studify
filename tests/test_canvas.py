@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
-from legome.models.brickstore import PRICE_BASE_USD, PRICE_TILE_USD, BrickStore
+from legome.models.brickstore import BrickStore
 from legome.models.canvas import FRAME_COLOR, Canvas
 from legome.models.static import DIM_BASE
 
@@ -22,7 +22,8 @@ def test_rejects_a_canvas_smaller_than_one_baseplate(bases):
 def test_empty_canvas_has_no_shape_cost_or_bricks():
     canvas = Canvas(1)
     assert canvas.shape == (0, 0)
-    assert canvas.get_cost() == 0
+    assert canvas.baseplate_count == 0
+    assert canvas.get_price().high == 0
     assert canvas.get_distribution() == {}
 
 
@@ -55,10 +56,17 @@ def test_shape_and_brick_ids(make_canvas):
     assert np.array_equal(canvas.get_brick_ids(), np.array([[1, 2, 3], [4, 5, 6]]))
 
 
-def test_cost_charges_per_stud_plus_a_share_of_the_baseplate(make_canvas):
-    canvas = make_canvas([[1, 1], [1, 1]])
-    expected = 4 * (PRICE_TILE_USD + PRICE_BASE_USD / (DIM_BASE * DIM_BASE))
-    assert canvas.get_cost() == pytest.approx(expected)
+def test_baseplate_count_rounds_partial_plates_up(make_canvas):
+    assert make_canvas([[1, 1], [1, 1]]).baseplate_count == 1
+    assert make_canvas([[1] * (DIM_BASE + 1)] * DIM_BASE).baseplate_count == 2
+
+
+def test_price_covers_the_bricks_and_the_baseplates(make_canvas):
+    canvas = make_canvas([[1] * DIM_BASE] * DIM_BASE)  # one baseplate of brick #1
+    price = canvas.get_price("official", "EUR")
+    assert price.baseplate_count == 1
+    assert price.low == pytest.approx(price.bricks_low + price.baseplates)
+    assert price.high > price.low > price.baseplates > 0
 
 
 def test_to_html_contains_a_table_of_brick_ids(make_canvas):
@@ -334,3 +342,13 @@ def test_bricks_named_is_case_insensitive_and_deduplicated():
 def test_bricks_named_lists_every_unknown_name():
     with pytest.raises(ValueError, match="Foo, Bar"):
         BrickStore.bricks_named(["Black", "Foo", "Bar"])
+
+
+def test_fit_from_image_reads_non_ascii_paths(tmp_path):
+    # cv2.imread can't open these on Windows; Canvas must still manage.
+    path = tmp_path / "photo été ü.png"
+    ok, png = cv2.imencode(".png", np.full((32, 32, 3), 255, dtype=np.uint8))
+    path.write_bytes(png.tobytes())
+    canvas = Canvas(1)
+    canvas.fit_from_image(path)
+    assert canvas.shape == (DIM_BASE, DIM_BASE)

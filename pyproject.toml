@@ -14,9 +14,14 @@ dependencies = [
 
 [project.optional-dependencies]
 gui = ["customtkinter>=5.2"]
+web = [
+    "dash>=2.17",
+    "dash-mantine-components>=1.0",
+]
 
 [project.scripts]
 legome = "legome.cli:main"
+legome-web = "legome.web.app:main"
 
 [dependency-groups]
 dev = [
@@ -39,7 +44,9 @@ system-certs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# -p no:dash: Dash ships a pytest plugin (browser testing) we do not use, and which
+# trips the warnings-as-errors filter below on recent pytest.
+addopts = "-q -p no:dash"
 filterwarnings = [
     "error",
     # Canvas.plot() calls plt.show(); harmless under the headless Agg backend.
