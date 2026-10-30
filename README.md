@@ -30,6 +30,10 @@ uv run legome pics/alex.jpg -s 3 --frame 2
 # A punchy, 8-colour version: cheaper to buy, and more pop-art
 uv run legome pics/dog.png -s 3 --max-colors 8
 
+# Pop-art or comic-book retouching before the mosaic
+uv run legome pics/alex.jpg -s 3 --frame 2 --style pop
+uv run legome pics/dog.png -s 3 --frame 2 --style comic
+
 # Graphical interface (needs `uv sync --all-extras`)
 uv run legome --gui
 ```
@@ -44,6 +48,7 @@ uv run legome --gui
 | `--frame` | Black frame this many studs wide around the mosaic (default `0`, max `15`). |
 | `--colors` | Only use these LEGO colours, comma-separated, e.g. `"Black,White,Red"`. |
 | `--max-colors` | Use at most N colours, chosen to best fit the image. |
+| `--style` | Retouch the photo first: `natural` (default), `pop` (vivid, flat, short palette) or `comic` (black outlines). |
 | `--dither` | Blend colours the palette lacks with Floyd-Steinberg dithering. |
 | `--gui` | Launch the graphical interface. |
 

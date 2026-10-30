@@ -10,7 +10,15 @@ import pandas as pd
 from legome.models.brick import Brick
 from legome.models.brickstore import BrickStore
 from legome.models.static import COLORS, DIM_BASE
-from legome.models.utils import dither_indices, get_distribution, make_map, nearest_color_indices, reduce_palette
+from legome.models.style import Style, outline_mask, retouch
+from legome.models.utils import (
+    dither_indices,
+    get_distribution,
+    make_map,
+    nearest_color_indices,
+    reduce_palette,
+    rgb_to_lab,
+)
 
 # Colour used to pad a resized image out to whole baseplates (see resize_img).
 LETTERBOX_COLOR = (0, 0, 0)
@@ -199,6 +207,7 @@ class Canvas:
         palette: list[Brick] | None = None,
         max_colors: int | None = None,
         dither: bool = False,
+        style: Style | None = None,
     ) -> None:
         """
         Fill the canvas from an image, mapping every pixel to its nearest brick
@@ -213,18 +222,25 @@ class Canvas:
         :param dither: Blend colours the palette lacks with Floyd-Steinberg
             dithering instead of flat nearest-colour regions. The frame and the
             letterbox bars are never dithered.
+        :param style: Retouch the picture first (see ``style.STYLES``). Its
+            ``colors`` are ignored here; pick the palette with ``palette``.
         """
         src = cv2.imread(str(path))
         if src is None:
             raise FileNotFoundError(f"Could not read image: {path}")
         self.source_path = Path(path)
         self.source = self.source_path.stem
-        resized = self.resize_img(cv2.cvtColor(src, cv2.COLOR_BGR2RGB))
+        src = cv2.cvtColor(src, cv2.COLOR_BGR2RGB)
+        if style is not None:
+            src = retouch(src, style)
+        resized = self.resize_img(src)
+        outlined = style is not None and style.outline
 
         palette = palette if palette is not None else self.store.available_bricks
         if max_colors is not None:
-            # A frame must stay black, however few colours the picture is allowed.
-            keep = tuple(i for i, brick in enumerate(palette) if self.frame and brick.color == FRAME_COLOR)
+            # A frame or outline must stay black, however few colours are allowed.
+            needs_black = self.frame or outlined
+            keep = tuple(i for i, brick in enumerate(palette) if needs_black and brick.color == FRAME_COLOR)
             kept = reduce_palette(resized, np.array([brick.color for brick in palette]), max_colors, keep)
             palette = [palette[i] for i in kept]
         colors = np.array([brick.color for brick in palette])
@@ -234,6 +250,11 @@ class Canvas:
         if dither:
             top, bottom, left, right = self.content_box
             closest[top:bottom, left:right] = dither_indices(resized[top:bottom, left:right], colors)
+        if outlined:
+            # Outline in the darkest colour on hand: black, unless the palette lacks it.
+            top, bottom, left, right = self.content_box
+            darkest = int(np.argmin(rgb_to_lab(colors)[:, 0]))
+            closest[top:bottom, left:right][outline_mask(resized[top:bottom, left:right])] = darkest
 
         # Bricks are immutable, so the same instance can be reused across the grid.
         self.bricks = [[palette[index] for index in row] for row in closest]

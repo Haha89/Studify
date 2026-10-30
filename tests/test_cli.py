@@ -68,3 +68,13 @@ def test_palette_options_end_to_end(red_blue_image, tmp_path, capsys):
     args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
     assert main([*args, "--colors", "red, blue,Black", "--max-colors", "2", "--dither"]) == 0
     assert "Colors used: 2" in capsys.readouterr().out
+
+
+def test_rejects_an_unknown_style(red_blue_image):
+    with pytest.raises(SystemExit):
+        main([str(red_blue_image), "--style", "baroque", "--no-plot", "--no-open"])
+
+
+def test_style_end_to_end(red_blue_image, tmp_path):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    assert main([*args, "--style", "comic", "--frame", "1"]) == 0

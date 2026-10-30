@@ -5,6 +5,7 @@ from pathlib import Path
 
 from legome.models.brickstore import BrickStore
 from legome.models.static import DIM_BASE
+from legome.models.style import STYLES
 from legome.process import process
 
 
@@ -50,6 +51,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Use at most N colors, chosen to best fit the image (default: no limit).",
     )
     parser.add_argument(
+        "--style",
+        choices=list(STYLES),
+        default="natural",
+        help="Retouch the photo first: pop (vivid, flat, short palette) or comic (black outlines). "
+        "Default: %(default)s.",
+    )
+    parser.add_argument(
         "--dither",
         action="store_true",
         help="Blend colors the palette lacks with Floyd-Steinberg dithering.",
@@ -93,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         colors=args.colors,
         max_colors=args.max_colors,
         dither=args.dither,
+        style=args.style,
     )
     return 0
 
