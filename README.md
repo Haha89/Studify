@@ -1,6 +1,17 @@
 # LegoMe
 
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://pre-commit.com/)
+[![Tested with pytest](https://img.shields.io/badge/tested%20with-pytest-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Web app: Dash](https://img.shields.io/badge/web%20app-Dash-008DE4?logo=plotly&logoColor=white)](https://dash.plotly.com/)
+[![Unofficial: not affiliated with LEGO](https://img.shields.io/badge/unofficial-not%20affiliated%20with%20LEGO-lightgrey)](#disclaimer)
+
 Turn any image into a LEGO mosaic and a printable, baseplate-by-baseplate build guide.
+
+> **Unofficial fan project.** LegoMe is not affiliated with, sponsored, authorized or
+> endorsed by the LEGO Group. See the [disclaimer](#disclaimer).
 
 LegoMe downsamples your picture to whole 32x32 LEGO baseplates, snaps every pixel to the
 nearest real LEGO colour, and writes an HTML guide with one stud map per baseplate, the
@@ -14,8 +25,8 @@ with a 2-stud black frame:
 | Original | Natural | Pop (`--style pop`) | Comic (`--style comic`) |
 | :---: | :---: | :---: | :---: |
 | <img src="docs/images/dog-original.png" width="200" alt="Original picture"> | <img src="docs/images/dog-natural.png" width="200" alt="Natural mosaic"> | <img src="docs/images/dog-pop.png" width="200" alt="Pop-art mosaic"> | <img src="docs/images/dog-comic.png" width="200" alt="Comic mosaic"> |
-| | 71 colours | 12 colours | 69 colours |
-| | 469–1 055 € | 291–512 € | 394–829 € |
+| | 57 colours | 12 colours | 56 colours |
+| | 404–813 € | 291–512 € | 353–678 € |
 
 Prices are estimates with official LEGO baseplates, shipping excluded (see
 [Pricing](#pricing)). The pop style's short palette makes it the cheapest to build.
@@ -66,6 +77,7 @@ uv run legome --gui
 | `--no-plot` | Skip the matplotlib preview. |
 | `--no-open` | Do not open the guide in a browser. |
 | `--frame` | Black frame this many studs wide around the mosaic (default `0`, max `15`). |
+| `--palette` | Colours to draw from: `buyable` (default: no rare, pricey colours), `all`, or `common` only. |
 | `--colors` | Only use these LEGO colours, comma-separated, e.g. `"Black,White,Red"`. |
 | `--max-colors` | Use at most N colours, chosen to best fit the image. |
 | `--style` | Retouch the photo first: `natural` (default), `pop` (vivid, flat, short palette) or `comic` (black outlines). |
@@ -131,8 +143,10 @@ The estimate (`models/pricing.py`) is a range, not a quote:
 - **Dollars** use a fixed rate (`USD_PER_EUR`), to update by hand.
 - **Shipping is not included**; on BrickLink it often outweighs the parts on small orders.
 
-Rare colours a build uses are listed in the guide and the web app: they make a mosaic
-much dearer, and can be hard to find in bulk at all. All figures are rough market
+Rare colours are left out by default (`--palette buyable`): on sample pictures that
+barely changed the mosaic but cut its price by 35–50 %. Use `--palette all` to allow
+them; any a build uses are then listed in the guide and the web app, as they make a
+mosaic much dearer and can be hard to find in bulk at all. All figures are rough market
 estimates (sources in the module), kept in plain tables so they are easy to update.
 
 ## Layout
@@ -166,14 +180,29 @@ uv run ruff format .                # format
 ## Notes
 
 - The palette in `static.py` has 133 entries but only 122 distinct RGB values (for example
-  `Red` and `Trans-Red` are identical). By default, matching only considers
-  `BrickStore.available_bricks` (81 plain, buildable colours) — trans, chrome, speckle,
-  glitter, pearl, metallic and glow-in-dark finishes are excluded, since several sit
-  exactly on top of a plain colour (e.g. the discontinued `Speckle Black-Copper` is pure
-  `(0, 0, 0)`, same as `Black`) and would otherwise win ties against it. Pass `--full-palette`
-  to also match against those finishes.
-- Brick ids in the guide are indices into `static.COLORS`; the guide's final table maps
-  every id to its name, RGB and a swatch.
+  `Red` and `Trans-Red` are identical). `BrickStore.available_bricks` keeps the 81 plain,
+  buildable colours — trans, chrome, speckle, glitter, pearl, metallic and glow-in-dark
+  finishes are excluded, since several sit exactly on top of a plain colour (e.g. the
+  discontinued `Speckle Black-Copper` is pure `(0, 0, 0)`, same as `Black`) and would
+  otherwise win ties against it. Pass `--full-palette` to also match against those finishes.
+- By default, matching then also leaves out the 20 rare colours (`--palette buyable`, 61
+  colours); see [Pricing](#pricing).
+- Brick ids in the guide are compact numbers (1 to N, for the N colours that guide uses);
+  the guide's final table maps every id to its LEGO colour name, RGB and a swatch.
 - Colour data is cross-checked against the LDraw colour reference and BrickLink's colour
   guide, but it isn't exhaustive: common colours like `Dark Royal Blue`, `Coral`, the
   `Nougat` family and the `Neon`/`Satin Trans-` finishes aren't in the palette yet.
+
+## Disclaimer
+
+LegoMe is an independent, unofficial fan project. It is **not affiliated with,
+sponsored, authorized or endorsed by the LEGO Group**.
+
+LEGO® and the LEGO logo, the brick and knob configurations and the minifigure are
+trademarks and/or copyrights of the LEGO Group. The author claims no rights to them:
+the LEGO name and colour names are used only to describe which real parts a mosaic
+needs. Colour values come from the community-maintained LDraw and BrickLink references.
+
+Prices are rough estimates for information only, not offers or quotes, and are not
+endorsed by LEGO, BrickLink or any seller. Pictures you turn into mosaics remain
+subject to their own copyright: only use images you have the right to use.
