@@ -26,7 +26,7 @@ CURRENCY_SYMBOLS = {"EUR": "€", "USD": "$"}
 
 # Price of one 32x32 baseplate, in euros.
 BASEPLATE_PRICES_EUR = {"official": 8.99, "compatible": 2.00}
-BASEPLATE_LABELS = {"official": "LEGO official", "compatible": "Compatible"}
+BASEPLATE_LABELS = {"official": "official LEGO", "compatible": "compatible"}
 
 # Price range of one 1x1 plate, in euros, by how easy its colour is to find.
 TIER_PRICES_EUR = {

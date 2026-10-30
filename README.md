@@ -6,6 +6,26 @@ LegoMe downsamples your picture to whole 32x32 LEGO baseplates, snaps every pixe
 nearest real LEGO colour, and writes an HTML guide with one stud map per baseplate, the
 brick counts you need, and a cost estimate.
 
+## Example
+
+One picture, three styles, each 3 x 3 baseplates (96 x 96 studs, about 77 cm a side)
+with a 2-stud black frame:
+
+| Original | Natural | Pop (`--style pop`) | Comic (`--style comic`) |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/images/dog-original.png" width="200" alt="Original picture"> | <img src="docs/images/dog-natural.png" width="200" alt="Natural mosaic"> | <img src="docs/images/dog-pop.png" width="200" alt="Pop-art mosaic"> | <img src="docs/images/dog-comic.png" width="200" alt="Comic mosaic"> |
+| | 71 colours | 12 colours | 69 colours |
+| | 469–1 055 € | 291–512 € | 394–829 € |
+
+Prices are estimates with official LEGO baseplates, shipping excluded (see
+[Pricing](#pricing)). The pop style's short palette makes it the cheapest to build.
+
+**Example build guide:** [`docs/example-guide-dog.pdf`](docs/example-guide-dog.pdf), the
+pop render at 2 x 2 baseplates. It has an overview, then one A4 page per baseplate with
+its stud map and the bricks it needs, then the colour reference.
+
+Regenerate these with `uv run python scripts/make_docs.py`.
+
 ## Install
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
@@ -50,10 +70,12 @@ uv run legome --gui
 | `--max-colors` | Use at most N colours, chosen to best fit the image. |
 | `--style` | Retouch the photo first: `natural` (default), `pop` (vivid, flat, short palette) or `comic` (black outlines). |
 | `--dither` | Blend colours the palette lacks with Floyd-Steinberg dithering. |
+| `--baseplates` | Price `official` LEGO baseplates (default) or cheaper `compatible` ones. |
+| `--currency` | Currency of the price estimate: `EUR` (default) or `USD`. |
 | `--gui` | Launch the graphical interface. |
 
 The guide lands at `<output-dir>/<image-name>.html`. Open it and print to PDF — the
-stylesheet puts one baseplate on each page.
+stylesheet puts one baseplate on each page — or call `PdfCreator.generate_pdf`.
 
 ### Web app
 
@@ -62,8 +84,9 @@ uv sync --extra web
 uv run legome-web        # then open http://127.0.0.1:8050
 ```
 
-Upload a photo (or paste a link), pick the size, frame and colour limit, compare the
-natural, pop and comic renders side by side, and download the chosen one as a PDF guide.
+Upload a photo (or paste a link), crop it if you like, pick the size, frame, colour
+limit, baseplates and currency, compare the natural, pop and comic renders side by side
+with their prices, and download the chosen one as a PDF guide.
 PDFs are printed by a headless Chrome, Chromium or Edge; set `LEGOME_BROWSER` to point at
 one if it isn't found automatically.
 
@@ -78,9 +101,9 @@ canvas.fit_from_image("pics/dog.png")
 
 print(canvas.shape)  # (rows, cols) in studs
 print(canvas.get_distribution())  # {brick_id: count}
-print(canvas.get_cost())  # USD
+print(canvas.get_price().format())  # e.g. "129–228 €"
 
-PdfCreator(canvas).generate_html(output_dir="output")
+PdfCreator(canvas).generate_html(output_dir="output")  # or .generate_pdf(...)
 ```
 
 ## How it works
@@ -97,7 +120,20 @@ PdfCreator(canvas).generate_html(output_dir="output")
    run of same-coloured bricks so you can see the shapes while building
    (`utils.make_map`).
 
-Costs assume $0.03 per 1x1 plate and $2.00 per 32x32 baseplate (`models/brickstore.py`).
+## Pricing
+
+The estimate (`models/pricing.py`) is a range, not a quote:
+
+- **Bricks** are priced by how easy their colour is to buy: common colours
+  EUR 0.02–0.04 a 1x1 plate, uncommon ones EUR 0.05–0.12, rare (retired or short-lived)
+  ones EUR 0.15–0.50; plus 5 % spares.
+- **Baseplates**: EUR 8.99 for official LEGO 32x32 plates, about EUR 2 for compatible ones.
+- **Dollars** use a fixed rate (`USD_PER_EUR`), to update by hand.
+- **Shipping is not included**; on BrickLink it often outweighs the parts on small orders.
+
+Rare colours a build uses are listed in the guide and the web app: they make a mosaic
+much dearer, and can be hard to find in bulk at all. All figures are rough market
+estimates (sources in the module), kept in plain tables so they are easy to update.
 
 ## Layout
 
