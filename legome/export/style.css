@@ -179,8 +179,13 @@ figcaption {
     margin-top: 0;
 }
 
+/* Separate borders, not collapsed: every line is drawn by exactly one cell (see
+   utils.get_class), so there is nothing to merge, and collapsed borders are where
+   printed PDFs showed shared lines doubled. Cells are border-box sized (see the
+   "*" rule), so a cell's borders eat into its 16px instead of shifting columns. */
 .stud-map {
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     margin: 0 auto;
 }
 
@@ -195,7 +200,9 @@ figcaption {
     width: 16px;
 }
 
-/* A thin line between adjacent studs of different colours... */
+/* A thin line between adjacent studs of different colours (top and left only
+   on the first row and column; inner lines come from the cell above or to
+   the left)... */
 .stud-map td.border-top {
     border-top: 1px solid var(--color-text);
 }
