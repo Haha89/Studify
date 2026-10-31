@@ -10,7 +10,6 @@ dependencies = [
     "numpy>=1.26",
     "opencv-python>=4.9",
     "pandas>=2.1",
-    "pikepdf>=9",
 ]
 
 [project.optional-dependencies]

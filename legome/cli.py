@@ -108,22 +108,25 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             parser.error(str(exc))
 
-    process(
-        size=args.size,
-        path=args.image,
-        output_dir=args.output_dir,
-        plot=not args.no_plot,
-        open_in_browser=not args.no_open,
-        full_palette=args.full_palette,
-        frame=args.frame,
-        colors=args.colors,
-        max_colors=args.max_colors,
-        dither=args.dither,
-        style=args.style,
-        palette=args.palette,
-        baseplates=args.baseplates,
-        currency=args.currency,
-    )
+    try:
+        process(
+            size=args.size,
+            path=args.image,
+            output_dir=args.output_dir,
+            plot=not args.no_plot,
+            open_in_browser=not args.no_open,
+            full_palette=args.full_palette,
+            frame=args.frame,
+            colors=args.colors,
+            max_colors=args.max_colors,
+            dither=args.dither,
+            style=args.style,
+            palette=args.palette,
+            baseplates=args.baseplates,
+            currency=args.currency,
+        )
+    except FileNotFoundError as exc:
+        parser.error(str(exc))
     return 0
 
 
