@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -243,16 +244,13 @@ class TestHtmlToPdf:
     @staticmethod
     def _fake_browser(monkeypatch, returncode=0, stderr=b"", writes_pdf=True):
         """Replace the browser process; returns the list its command line lands in."""
-        pikepdf = pytest.importorskip("pikepdf")
         commands = []
 
         def run(command, **kwargs):
             commands.append(command)
             if writes_pdf:
                 target = next(arg for arg in command if arg.startswith("--print-to-pdf=")).split("=", 1)[1]
-                pdf = pikepdf.new()
-                pdf.add_blank_page()
-                pdf.save(target)
+                Path(target).write_bytes(b"%PDF-fake")
             return SimpleNamespace(returncode=returncode, stderr=stderr)
 
         monkeypatch.setattr(pdf_creator.subprocess, "run", run)
@@ -292,26 +290,3 @@ class TestHtmlToPdf:
         self._fake_browser(monkeypatch, writes_pdf=False)
         with pytest.raises(RuntimeError, match="PDF printing failed"):
             pdf_creator.html_to_pdf(guide, guide.with_suffix(".pdf"))
-
-
-def test_compact_pdf_shrinks_loose_objects_and_keeps_the_pages(tmp_path):
-    pikepdf = pytest.importorskip("pikepdf")
-    from legome.models.pdf_creator import compact_pdf
-
-    path = tmp_path / "guide.pdf"
-    pdf = pikepdf.new()
-    for _ in range(3):
-        pdf.add_blank_page()
-    # Many small loose objects, like Chrome's per-cell structure tags, reachable from the root.
-    pdf.Root.Tags = pikepdf.Array(
-        [pdf.make_indirect(pikepdf.Dictionary(Type=pikepdf.Name.StructElem, K=i)) for i in range(2000)]
-    )
-    pdf.save(path, object_stream_mode=pikepdf.ObjectStreamMode.disable)
-    before = path.stat().st_size
-
-    compact_pdf(path)
-
-    assert path.stat().st_size < before / 2
-    with pikepdf.open(path) as compacted:
-        assert len(compacted.pages) == 3
-    assert not list(tmp_path.glob("*.packed.pdf"))  # no temp file left behind

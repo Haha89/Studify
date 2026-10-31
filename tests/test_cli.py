@@ -15,9 +15,20 @@ def test_requires_an_image(capsys):
     assert "required: image" in capsys.readouterr().err
 
 
-def test_rejects_a_missing_image(red_blue_image):
-    with pytest.raises(FileNotFoundError):
+def test_rejects_a_missing_image(red_blue_image, capsys):
+    with pytest.raises(SystemExit) as exc:
         main([str(red_blue_image.parent / "missing.png"), "--no-plot", "--no-open"])
+    assert exc.value.code == 2
+    assert "Could not read image" in capsys.readouterr().err
+
+
+def test_rejects_a_file_that_is_not_an_image(tmp_path, capsys):
+    not_an_image = tmp_path / "notes.txt"
+    not_an_image.write_text("just some text", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        main([str(not_an_image), "--no-plot", "--no-open"])
+    assert exc.value.code == 2
+    assert "notes.txt" in capsys.readouterr().err
 
 
 def test_builds_a_guide_end_to_end(red_blue_image, tmp_path, capsys):

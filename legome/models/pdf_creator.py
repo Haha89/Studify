@@ -12,7 +12,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pandas as pd
-import pikepdf
 from jinja2 import Environment, FileSystemLoader
 
 from legome.models.canvas import Canvas
@@ -92,19 +91,7 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> Path:
             raise RuntimeError(f"Could not start the browser {browser} to print the PDF: {exc}") from exc
     if result.returncode != 0 or not pdf_path.is_file():
         raise RuntimeError(f"PDF printing failed: {result.stderr.decode(errors='replace').strip()[-500:]}")
-    compact_pdf(pdf_path)
     return pdf_path
-
-
-def compact_pdf(pdf_path: Path) -> None:
-    """Rewrite a PDF in place with its objects packed into compressed object
-    streams, content unchanged. Saves about 1 % now that guides are printed
-    untagged (see ``html_to_pdf``)."""
-    pdf_path = Path(pdf_path)
-    packed = pdf_path.with_suffix(".packed.pdf")
-    with pikepdf.open(pdf_path) as pdf:
-        pdf.save(packed, compress_streams=True, object_stream_mode=pikepdf.ObjectStreamMode.generate)
-    packed.replace(pdf_path)
 
 
 def _original_data_uri(path: Path) -> str | None:
