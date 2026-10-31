@@ -26,14 +26,17 @@ import cv2
 import numpy as np
 
 from legome.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
-from legome.models.pricing import DEFAULT_PALETTE
-from legome.models.utils import read_image
+from legome.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
+from legome.models.utils import fit_within, read_image
 from legome.process import build_canvas
 
 SESSION_ROOT = Path(tempfile.gettempdir()) / "legome-web"
 # Sessions older than this are deleted whenever a new image comes in.
 SESSION_TTL_SECONDS = 24 * 3600
 MAX_IMAGE_BYTES = 15 * 1024 * 1024
+# Longest side a source is stored at. The largest mosaic is under 200 studs wide,
+# so this leaves room for a tight crop while keeping every later step quick.
+MAX_SOURCE_DIMENSION = 2000
 URL_TIMEOUT_SECONDS = 10
 
 # Styles offered side by side, in display order, with their French labels.
@@ -73,18 +76,36 @@ def _is_public_host(host: str) -> bool:
     return all(ipaddress.ip_address(info[4][0]).is_global for info in infos)
 
 
-def image_bytes_from_url(url: str) -> bytes:
-    """Download an image from an http(s) link, up to ``MAX_IMAGE_BYTES``."""
-    parsed = urlparse(url.strip())
+def _check_link(url: str) -> None:
+    """Refuse a link that isn't http(s), or that leads to a non-public address."""
+    parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ImageError("Le lien doit commencer par http:// ou https://.")
     if not _is_public_host(parsed.hostname):
         raise ImageError("Ce lien pointe vers une adresse inaccessible.")
 
+
+class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
+    """Apply ``_check_link`` to every redirect, or a public link could simply
+    forward the download to the server's own network."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_link(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_CheckedRedirects)
+
+
+def image_bytes_from_url(url: str) -> bytes:
+    """Download an image from an http(s) link, up to ``MAX_IMAGE_BYTES``."""
+    _check_link(url.strip())
     request = urllib.request.Request(url.strip(), headers={"User-Agent": "LegoMe/0.1"})
     try:
-        with urllib.request.urlopen(request, timeout=URL_TIMEOUT_SECONDS) as response:
+        with _OPENER.open(request, timeout=URL_TIMEOUT_SECONDS) as response:
             data = response.read(MAX_IMAGE_BYTES + 1)
+    except ImageError:
+        raise  # A redirect that _check_link refused: its message says why.
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         raise ImageError("Impossible de télécharger l'image depuis ce lien.") from exc
     if len(data) > MAX_IMAGE_BYTES:
@@ -108,8 +129,8 @@ def _purge_old_sessions(now: float) -> None:
 
 def save_source(data: bytes, name: str) -> str:
     """
-    Check that ``data`` is an image, store it as PNG in a new session directory
-    and return the session id.
+    Check that ``data`` is an image, store it as PNG in a new session directory,
+    shrunk to ``MAX_SOURCE_DIMENSION`` if larger, and return the session id.
 
     :param data: Raw image file bytes (PNG, JPEG, WebP...).
     :param name: Original file name or URL, used to title the guide.
@@ -122,7 +143,7 @@ def save_source(data: bytes, name: str) -> str:
     session_id = uuid.uuid4().hex
     session = SESSION_ROOT / session_id
     session.mkdir(parents=True)
-    ok, png = cv2.imencode(".png", img)
+    ok, png = cv2.imencode(".png", fit_within(img, MAX_SOURCE_DIMENSION))
     if not ok:
         raise ImageError("Impossible d'enregistrer cette image.")
     # Written via Python, not cv2.imwrite, which fails on non-ASCII paths on Windows.
@@ -143,9 +164,7 @@ def source_path(session_id: str) -> Path:
 def preview(path: Path, max_dimension: int = 640) -> tuple[str, int, int]:
     """A small PNG ``data:`` URI of the source image for the page, with its
     width and height in pixels."""
-    img = cv2.cvtColor(read_image(path), cv2.COLOR_BGR2RGB)
-    scale = min(1.0, max_dimension / max(img.shape[:2]))
-    img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    img = fit_within(cv2.cvtColor(read_image(path), cv2.COLOR_BGR2RGB), max_dimension)
     return data_uri_from_rgb_array(img), img.shape[1], img.shape[0]
 
 
@@ -209,6 +228,27 @@ def _working_image(session_id: str, crop: Crop | list[float] | None) -> Path:
     return target
 
 
+def _price_fields(price: PriceEstimate) -> dict[str, str]:
+    """The price estimate as the strings a style card shows."""
+    return {
+        "price": price.format(),
+        "price_bricks": f"{price.format(price.bricks_low)} – {price.format(price.bricks_high)}",
+        "price_baseplates": price.format(price.baseplates),
+    }
+
+
+def reprice(distribution: dict[str | int, int], baseplate_count: int, baseplates: str, currency: str) -> dict[str, str]:
+    """Price an already rendered style for other baseplates or another currency,
+    without fitting it again.
+
+    :param distribution: The render's bricks, as {brick id: count}. Ids may be
+        strings: the page stores this as JSON.
+    :param baseplate_count: Number of baseplates the render covers.
+    """
+    counts = {int(brick_id): count for brick_id, count in distribution.items()}
+    return _price_fields(estimate_price(counts, baseplate_count, baseplates, currency))
+
+
 def render_styles(
     session_id: str,
     size: int,
@@ -238,9 +278,8 @@ def render_styles(
                 "baseplates": canvas.baseplate_count,
                 "colors": len(distribution),
                 "bricks": sum(distribution.values()),
-                "price": price.format(),
-                "price_bricks": f"{price.format(price.bricks_low)} – {price.format(price.bricks_high)}",
-                "price_baseplates": price.format(price.baseplates),
+                "distribution": distribution,
+                **_price_fields(price),
                 "rare_colors": list(price.rare_colors),
             }
         )

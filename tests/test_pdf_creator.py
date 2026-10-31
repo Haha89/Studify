@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import subprocess
+from types import SimpleNamespace
+
 import pytest
 
+from legome.models import pdf_creator
 from legome.models.canvas import Canvas
-from legome.models.pdf_creator import PdfCreator
+from legome.models.pdf_creator import ORIGINAL_MAX_DIMENSION, PdfCreator
 from legome.models.static import COLORS, DIM_BASE
 
 
@@ -111,6 +115,29 @@ class TestOverviewImages:
         assert "<figcaption>Original</figcaption>" in html
         assert 'src="data:image/png;base64,' in html
 
+    def test_embeds_a_large_original_shrunk_to_a_jpeg(self, tmp_path):
+        import base64
+        import re
+
+        import cv2
+        import numpy as np
+
+        source = tmp_path / "large.png"
+        source.write_bytes(cv2.imencode(".png", np.full((2000, 4000, 3), 128, dtype=np.uint8))[1].tobytes())
+        canvas = Canvas(1)
+        canvas.fit_from_image(source)
+        html = PdfCreator(canvas).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
+
+        encoded = re.search(r'src="data:image/jpeg;base64,([^"]+)" alt="Original image"', html).group(1)
+        embedded = cv2.imdecode(np.frombuffer(base64.b64decode(encoded), dtype=np.uint8), cv2.IMREAD_COLOR)
+        assert embedded.shape[:2] == (ORIGINAL_MAX_DIMENSION // 2, ORIGINAL_MAX_DIMENSION)
+
+    def test_leaves_out_an_original_that_has_since_disappeared(self, two_base_canvas, tmp_path):
+        two_base_canvas.source_path = tmp_path / "gone.png"
+        html = PdfCreator(two_base_canvas).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
+
+        assert "<figcaption>Original</figcaption>" not in html
+
     def test_embeds_the_reconstructed_mosaic_as_a_pixelated_png(self, red_blue_image, tmp_path):
         canvas = Canvas(1)
         canvas.fit_from_image(red_blue_image)
@@ -203,6 +230,68 @@ class TestLocalColorIds:
             assert f'<li title="{name}">' in html
             assert f'<span class="swatch" style="background: rgb{rgb}"></span>' in html
             assert f'<span class="brick-name">{name}</span>' in html
+
+
+class TestHtmlToPdf:
+    @pytest.fixture
+    def guide(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pdf_creator, "find_browser", lambda: "my-chrome")
+        path = tmp_path / "guide.html"
+        path.write_text("<html></html>", encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _fake_browser(monkeypatch, returncode=0, stderr=b"", writes_pdf=True):
+        """Replace the browser process; returns the list its command line lands in."""
+        pikepdf = pytest.importorskip("pikepdf")
+        commands = []
+
+        def run(command, **kwargs):
+            commands.append(command)
+            if writes_pdf:
+                target = next(arg for arg in command if arg.startswith("--print-to-pdf=")).split("=", 1)[1]
+                pdf = pikepdf.new()
+                pdf.add_blank_page()
+                pdf.save(target)
+            return SimpleNamespace(returncode=returncode, stderr=stderr)
+
+        monkeypatch.setattr(pdf_creator.subprocess, "run", run)
+        return commands
+
+    @pytest.mark.parametrize(
+        ("error", "message"),
+        [
+            (FileNotFoundError("no such file"), "Could not start the browser my-chrome"),
+            (subprocess.TimeoutExpired("my-chrome", 1), "timed out"),
+        ],
+    )
+    def test_a_browser_that_cannot_run_or_finish_is_reported(self, guide, monkeypatch, error, message):
+        def run(command, **kwargs):
+            raise error
+
+        monkeypatch.setattr(pdf_creator.subprocess, "run", run)
+        with pytest.raises(RuntimeError, match=message):
+            pdf_creator.html_to_pdf(guide, guide.with_suffix(".pdf"))
+
+    def test_prints_the_guide_headless_and_untagged(self, guide, monkeypatch):
+        commands = self._fake_browser(monkeypatch)
+        pdf = pdf_creator.html_to_pdf(guide, guide.with_suffix(".pdf"))
+
+        command = commands[0]
+        assert pdf == guide.with_suffix(".pdf").resolve() and pdf.is_file()
+        assert command[0] == "my-chrome"
+        assert "--headless=new" in command and "--disable-pdf-tagging" in command
+        assert command[-1] == guide.resolve().as_uri()
+
+    def test_a_browser_error_is_reported(self, guide, monkeypatch):
+        self._fake_browser(monkeypatch, returncode=1, stderr=b"it broke", writes_pdf=False)
+        with pytest.raises(RuntimeError, match="it broke"):
+            pdf_creator.html_to_pdf(guide, guide.with_suffix(".pdf"))
+
+    def test_a_browser_that_writes_nothing_is_reported(self, guide, monkeypatch):
+        self._fake_browser(monkeypatch, writes_pdf=False)
+        with pytest.raises(RuntimeError, match="PDF printing failed"):
+            pdf_creator.html_to_pdf(guide, guide.with_suffix(".pdf"))
 
 
 def test_compact_pdf_shrinks_loose_objects_and_keeps_the_pages(tmp_path):

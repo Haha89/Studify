@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import mimetypes
 import os
 import shutil
 import subprocess
@@ -19,7 +18,11 @@ from jinja2 import Environment, FileSystemLoader
 from legome.models.canvas import Canvas
 from legome.models.pricing import BASEPLATE_LABELS, SPARE_RATE, color_tier
 from legome.models.static import COLORS, DIM_BASE
-from legome.models.utils import make_map
+from legome.models.utils import fit_within, make_map, read_image
+
+# The original picture in the guide's overview only fills half an A4 page.
+ORIGINAL_MAX_DIMENSION = 1200
+ORIGINAL_JPEG_QUALITY = 85
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "export"
 OUTPUT_DIR_NAME = "output"
@@ -66,20 +69,27 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> Path:
     pdf_path = Path(pdf_path).resolve()
     # A throwaway profile, so a browser the user already has open isn't reused or locked.
     with tempfile.TemporaryDirectory(prefix="legome-browser-") as profile:
-        result = subprocess.run(
-            [
-                browser,
-                "--headless=new",
-                "--disable-gpu",
-                "--no-first-run",
-                "--no-pdf-header-footer",
-                f"--user-data-dir={profile}",
-                f"--print-to-pdf={pdf_path}",
-                Path(html_path).resolve().as_uri(),
-            ],
-            capture_output=True,
-            timeout=PDF_TIMEOUT_SECONDS,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    browser,
+                    "--headless=new",
+                    "--disable-gpu",
+                    "--no-first-run",
+                    "--no-pdf-header-footer",
+                    # Tags would add a structure object per stud-map cell, doubling the print time.
+                    "--disable-pdf-tagging",
+                    f"--user-data-dir={profile}",
+                    f"--print-to-pdf={pdf_path}",
+                    Path(html_path).resolve().as_uri(),
+                ],
+                capture_output=True,
+                timeout=PDF_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"PDF printing timed out after {PDF_TIMEOUT_SECONDS} seconds.") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Could not start the browser {browser} to print the PDF: {exc}") from exc
     if result.returncode != 0 or not pdf_path.is_file():
         raise RuntimeError(f"PDF printing failed: {result.stderr.decode(errors='replace').strip()[-500:]}")
     compact_pdf(pdf_path)
@@ -88,8 +98,8 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> Path:
 
 def compact_pdf(pdf_path: Path) -> None:
     """Rewrite a PDF in place with its objects packed into compressed object
-    streams. Chrome's tagged PDFs hold one structure object per stud-map cell,
-    stored loose: packing them shrinks a guide about fourfold, content unchanged."""
+    streams, content unchanged. Saves about 1 % now that guides are printed
+    untagged (see ``html_to_pdf``)."""
     pdf_path = Path(pdf_path)
     packed = pdf_path.with_suffix(".packed.pdf")
     with pikepdf.open(pdf_path) as pdf:
@@ -97,12 +107,20 @@ def compact_pdf(pdf_path: Path) -> None:
     packed.replace(pdf_path)
 
 
-def _data_uri_from_file(path: Path) -> str:
-    """Encode a file on disk as a ``data:`` URI, so the guide can embed it without a
-    second file alongside the HTML."""
-    mime, _ = mimetypes.guess_type(path.name)
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:{mime or 'application/octet-stream'};base64,{encoded}"
+def _original_data_uri(path: Path) -> str | None:
+    """Encode the source image as a small JPEG ``data:`` URI, so the guide can embed
+    it without a second file alongside the HTML, and without a phone photo's full
+    resolution, which would outweigh the rest of the guide many times over. None if
+    the file can no longer be read."""
+    img = read_image(path)
+    if img is None:
+        return None
+    ok, jpeg = cv2.imencode(
+        ".jpg", fit_within(img, ORIGINAL_MAX_DIMENSION), [cv2.IMWRITE_JPEG_QUALITY, ORIGINAL_JPEG_QUALITY]
+    )
+    if not ok:
+        raise RuntimeError("Failed to encode the original image as JPEG")
+    return f"data:image/jpeg;base64,{base64.b64encode(jpeg).decode('ascii')}"
 
 
 def data_uri_from_rgb_array(rgb: np.ndarray) -> str:
@@ -195,7 +213,7 @@ class PdfCreator:
         colors = self.get_used_colors()
         html_out = template.render(
             title=f"LegoMe: {self.canvas.source}",
-            original_image=_data_uri_from_file(self.canvas.source_path) if self.canvas.source_path else None,
+            original_image=_original_data_uri(self.canvas.source_path) if self.canvas.source_path else None,
             mosaic_image=data_uri_from_rgb_array(self.canvas.to_preview_image()) if self.canvas.bricks else None,
             mosaic_size=f"{cols} x {rows} studs",
             total_colors=len(distribution),

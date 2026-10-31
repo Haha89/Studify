@@ -34,6 +34,17 @@ def read_image(path: str | Path) -> np.ndarray | None:
     return cv2.imdecode(data, cv2.IMREAD_COLOR) if data.size else None
 
 
+def fit_within(img: np.ndarray, max_dimension: int) -> np.ndarray:
+    """Shrink an image so its longest side is at most ``max_dimension`` pixels,
+    keeping its proportions. An image that already fits comes back unchanged."""
+    height, width = img.shape[:2]
+    scale = max_dimension / max(height, width)
+    if scale >= 1:
+        return img
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    return cv2.resize(img, size, interpolation=cv2.INTER_AREA)
+
+
 def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
     """Convert (N, 3) RGB colours (0-255) to (N, 3) float32 CIELAB (L in 0-100).
 

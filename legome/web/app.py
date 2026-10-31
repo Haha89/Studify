@@ -12,6 +12,7 @@ import time
 import dash_mantine_components as dmc
 import plotly.graph_objects as go
 from dash import ALL, Dash, Input, Output, Patch, State, ctx, dcc, html, no_update
+from dash.exceptions import PreventUpdate
 from flask import abort, send_file
 
 from legome.models.static import DIM_BASE
@@ -334,6 +335,7 @@ def _layout() -> dmc.MantineProvider:
                 dcc.Store(id="source"),  # {"session": id, "name": ..., "width"/"height": preview size}
                 dcc.Store(id="crop"),  # [left, top, right, bottom] as fractions, or None
                 dcc.Store(id="settings"),  # The settings the current previews were made with.
+                dcc.Store(id="builds"),  # {style: {"distribution", "baseplates"}}, to reprice without refitting.
                 dcc.Store(id="selected-style"),
             ],
             size="lg",
@@ -344,8 +346,13 @@ def _layout() -> dmc.MantineProvider:
     )
 
 
+def _price_detail(prices: dict[str, object]) -> str:
+    return f"Briques {prices['price_bricks']} (+5 % de rab) · baseplates {prices['price_baseplates']}"
+
+
 def _style_card(result: dict[str, object]) -> html.Div:
     bricks = f"{result['bricks']:,}".replace(",", " ")
+    style = result["style"]
     return html.Div(
         dmc.Card(
             [
@@ -362,14 +369,15 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 dmc.Text(f"{bricks} briques", c="dimmed", size="sm"),
                 dmc.Divider(my="sm"),
                 dmc.Group(
-                    [dmc.Text(result["price"], fw=700, size="lg"), dmc.Text("hors livraison", c="dimmed", size="xs")],
+                    [
+                        dmc.Text(result["price"], id={"type": "style-price", "index": style}, fw=700, size="lg"),
+                        dmc.Text("hors livraison", c="dimmed", size="xs"),
+                    ],
                     justify="space-between",
                     align="baseline",
                 ),
                 dmc.Text(
-                    f"Briques {result['price_bricks']} (+5 % de rab) · baseplates {result['price_baseplates']}",
-                    c="dimmed",
-                    size="xs",
+                    _price_detail(result), id={"type": "style-price-detail", "index": style}, c="dimmed", size="xs"
                 ),
                 *(
                     [
@@ -392,7 +400,7 @@ def _style_card(result: dict[str, object]) -> html.Div:
             padding="md",
             shadow="xs",
         ),
-        id={"type": "style-card", "index": result["style"]},
+        id={"type": "style-card", "index": style},
         className="style-card",
         n_clicks=0,
     )
@@ -560,21 +568,22 @@ def create_app() -> Dash:
         Output("styles", "children"),
         Output("settings", "data"),
         Output("selected-style", "data"),
+        Output("builds", "data"),
         Input("generate", "n_clicks"),
         Input("source", "data"),
         Input("crop", "data"),
-        Input("baseplates", "value"),
-        Input("currency", "value"),
         Input("palette", "value"),
+        State("baseplates", "value"),
+        State("currency", "value"),
         State("size", "value"),
         State("frame", "value"),
         State("max-colors", "value"),
         running=[(Output("generate", "loading"), True, False)],
         prevent_initial_call=True,
     )
-    def generate_styles(_clicks, source, crop, baseplates, currency, palette, size, frame, max_colors):
+    def generate_styles(_clicks, source, crop, palette, baseplates, currency, size, frame, max_colors):
         if not source:
-            return no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update
         settings = {
             "size": size,
             "frame": frame,
@@ -587,9 +596,36 @@ def create_app() -> Dash:
         try:
             results = service.render_styles(source["session"], **settings)
         except service.ImageError as exc:
-            return _error(str(exc)), None, None
+            return _error(str(exc)), None, None, None
         cards = dmc.SimpleGrid([_style_card(result) for result in results], cols={"base": 1, "sm": 3}, spacing="lg")
-        return cards, settings, None
+        builds = {r["style"]: {"distribution": r["distribution"], "baseplates": r["baseplates"]} for r in results}
+        return cards, settings, None, builds
+
+    @app.callback(
+        Output({"type": "style-price", "index": ALL}, "children"),
+        Output({"type": "style-price-detail", "index": ALL}, "children"),
+        Output("settings", "data", allow_duplicate=True),
+        Input("baseplates", "value"),
+        Input("currency", "value"),
+        State("settings", "data"),
+        State("builds", "data"),
+        State({"type": "style-price", "index": ALL}, "id"),
+        prevent_initial_call=True,
+    )
+    def update_prices(baseplates, currency, settings, builds, price_ids):
+        # Only the prices depend on these two: the mosaics stay as they are, and so
+        # does the selected style. The settings are updated for the PDF guide.
+        if not (settings and builds):
+            raise PreventUpdate  # no_update isn't accepted for the wildcard outputs.
+        prices = [
+            service.reprice(build["distribution"], build["baseplates"], baseplates, currency)
+            for build in (builds[price_id["index"]] for price_id in price_ids)
+        ]
+        return (
+            [price["price"] for price in prices],
+            [_price_detail(price) for price in prices],
+            {**settings, "baseplates": baseplates, "currency": currency},
+        )
 
     @app.callback(
         Output("selected-style", "data", allow_duplicate=True),
