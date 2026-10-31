@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import io
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
 import numpy as np
@@ -54,10 +56,100 @@ class TestUrl:
         with pytest.raises(service.ImageError, match="inaccessible"):
             service.image_bytes_from_url(url)
 
+    def test_a_host_that_does_not_resolve_is_not_public(self, monkeypatch):
+        def no_such_host(host, port):
+            raise service.socket.gaierror
+
+        monkeypatch.setattr(service.socket, "getaddrinfo", no_such_host)
+        assert service._is_public_host("nowhere.invalid") is False
+
+    @pytest.mark.parametrize(
+        ("addresses", "public"),
+        [(["8.8.8.8"], True), (["8.8.8.8", "10.0.0.1"], False), (["8.8.8.8", "::1"], False)],
+    )
+    def test_a_host_is_public_only_if_every_address_is(self, addresses, public, monkeypatch):
+        infos = [(None, None, None, "", (address, 0)) for address in addresses]
+        monkeypatch.setattr(service.socket, "getaddrinfo", lambda host, port: infos)
+        assert service._is_public_host("example.com") is public
+
+    @pytest.mark.parametrize("error", [service.urllib.error.URLError("refused"), TimeoutError()])
+    def test_a_failed_download_is_a_clear_error(self, error, monkeypatch):
+        def fail(request, timeout):
+            raise error
+
+        monkeypatch.setattr(service, "_is_public_host", lambda host: True)
+        monkeypatch.setattr(service._OPENER, "open", fail)
+        with pytest.raises(service.ImageError, match="Impossible de télécharger"):
+            service.image_bytes_from_url("https://example.com/dog.png")
+
+    def test_rejects_an_oversized_download(self, png_bytes, monkeypatch):
+        monkeypatch.setattr(service, "MAX_IMAGE_BYTES", 10)
+        monkeypatch.setattr(service, "_is_public_host", lambda host: True)
+        monkeypatch.setattr(service._OPENER, "open", lambda request, timeout: io.BytesIO(png_bytes))
+        with pytest.raises(service.ImageError, match="trop lourde"):
+            service.image_bytes_from_url("https://example.com/dog.png")
+
     def test_downloads_a_public_image(self, png_bytes, monkeypatch):
         monkeypatch.setattr(service, "_is_public_host", lambda host: True)
-        monkeypatch.setattr(service.urllib.request, "urlopen", lambda request, timeout: io.BytesIO(png_bytes))
+        monkeypatch.setattr(service._OPENER, "open", lambda request, timeout: io.BytesIO(png_bytes))
         assert service.image_bytes_from_url("https://example.com/dog.png") == png_bytes
+
+
+class TestRedirects:
+    """Against a real local server, reached as "localhost", the one host treated as
+    public here; 127.0.0.1 stands in for an address on the server's own network."""
+
+    @pytest.fixture
+    def server(self, png_bytes, monkeypatch):
+        monkeypatch.setattr(service, "_is_public_host", lambda host: host == "localhost")
+
+        class Handler(BaseHTTPRequestHandler):
+            hits = []
+
+            def do_GET(self):
+                self.hits.append(self.path)
+                port = self.server.server_address[1]
+                targets = {
+                    "/to-public": f"http://localhost:{port}/image",
+                    "/to-private": f"http://127.0.0.1:{port}/secret",
+                    "/to-file": "file:///etc/passwd",
+                }
+                if self.path in targets:
+                    self.send_response(302)
+                    self.send_header("Location", targets[self.path])
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                else:
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(png_bytes)))
+                    self.end_headers()
+                    self.wfile.write(png_bytes)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        yield server, Handler.hits
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+    def test_follows_a_redirect_to_a_public_address(self, server, png_bytes):
+        port = server[0].server_address[1]
+        assert service.image_bytes_from_url(f"http://localhost:{port}/to-public") == png_bytes
+
+    def test_refuses_a_redirect_to_a_private_address(self, server):
+        port = server[0].server_address[1]
+        with pytest.raises(service.ImageError, match="inaccessible"):
+            service.image_bytes_from_url(f"http://localhost:{port}/to-private")
+        assert "/secret" not in server[1]
+
+    def test_refuses_a_redirect_to_another_scheme(self, server):
+        port = server[0].server_address[1]
+        with pytest.raises(service.ImageError, match="Impossible de télécharger"):
+            service.image_bytes_from_url(f"http://localhost:{port}/to-file")
 
 
 class TestSessions:
@@ -67,6 +159,13 @@ class TestSessions:
         assert path.parent == session_root / session
         assert path.name == "Mon_chien_été_2026.png"
         assert read_image(path).shape == (40, 80, 3)
+
+    def test_shrinks_large_images_keeping_their_proportions(self, monkeypatch):
+        monkeypatch.setattr(service, "MAX_SOURCE_DIMENSION", 40)
+        ok, data = cv2.imencode(".png", np.zeros((50, 200, 3), dtype=np.uint8))
+        assert ok
+        session = service.save_source(data.tobytes(), "wide.png")
+        assert read_image(service.source_path(session)).shape == (10, 40, 3)
 
     def test_rejects_files_that_are_not_images(self):
         with pytest.raises(service.ImageError, match="pas une image"):
@@ -86,6 +185,13 @@ class TestSessions:
         monkeypatch.setattr(service, "SESSION_TTL_SECONDS", -1)  # everything counts as stale
         service.save_source(png_bytes, "new.png")
         assert not (session_root / old).exists()
+
+
+def test_preview_shrinks_the_image_and_reports_its_size(png_bytes):
+    session = service.save_source(png_bytes, "flag.png")
+    uri, width, height = service.preview(service.source_path(session), max_dimension=20)
+    assert uri.startswith("data:image/png;base64,")
+    assert (width, height) == (20, 10)
 
 
 def test_render_styles_returns_one_preview_per_style(png_bytes):
@@ -267,3 +373,17 @@ def test_render_styles_prices_each_style(png_bytes):
     assert official[0]["price"].endswith("€") and compatible[0]["price"].endswith("$")
     assert official[0]["price_baseplates"] == "9 €"
     assert isinstance(official[0]["rare_colors"], list)
+
+
+def test_reprice_matches_a_fresh_render(png_bytes):
+    session = service.save_source(png_bytes, "flag.png")
+    official = service.render_styles(session, size=1, frame=0, max_colors=None)[0]
+    compatible = service.render_styles(
+        session, size=1, frame=0, max_colors=None, baseplates="compatible", currency="USD"
+    )[0]
+
+    # Brick ids come back from the page as strings: it stores them as JSON.
+    distribution = {str(brick_id): count for brick_id, count in official["distribution"].items()}
+    prices = service.reprice(distribution, official["baseplates"], "compatible", "USD")
+
+    assert prices == {key: compatible[key] for key in ("price", "price_bricks", "price_baseplates")}
