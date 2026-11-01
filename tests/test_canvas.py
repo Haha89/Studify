@@ -4,10 +4,10 @@ import cv2
 import numpy as np
 import pytest
 
-from legome.models.brick import Brick
-from legome.models.brickstore import BrickStore
-from legome.models.canvas import FRAME_COLOR, Canvas
-from legome.models.static import COLORS, DIM_BASE
+from studify.models.brick import Brick
+from studify.models.brickstore import BrickStore
+from studify.models.canvas import FRAME_COLOR, Canvas
+from studify.models.static import COLORS, DIM_BASE
 
 
 def test_size_is_expressed_in_studs():
@@ -245,7 +245,7 @@ class TestFitFromImage:
         import cv2
         import numpy as np
 
-        from legome.models.static import COLORS
+        from studify.models.static import COLORS
 
         path = tmp_path / "black.png"
         cv2.imwrite(str(path), np.zeros((32, 32, 3), dtype=np.uint8))
@@ -255,7 +255,7 @@ class TestFitFromImage:
         assert list(COLORS)[canvas.bricks[0][0].id] == "Black"
 
     def test_full_palette_opts_into_speciality_finishes(self, red_blue_image):
-        from legome.models.brickstore import BrickStore
+        from studify.models.brickstore import BrickStore
 
         canvas = Canvas(1)
         canvas.fit_from_image(red_blue_image, palette=BrickStore.all_bricks)
@@ -381,7 +381,7 @@ class TestCleanStrays:
         def fail(*args):
             raise AssertionError("dithered bricks must not be cleaned")
 
-        monkeypatch.setattr("legome.models.canvas.remove_stray_bricks", fail)
+        monkeypatch.setattr("studify.models.canvas.remove_stray_bricks", fail)
         Canvas(1).fit_from_image(speck, palette=[self.WHITE, self.LIGHT_GREY], dither=True)
 
     def test_the_frame_is_left_alone(self, speck):

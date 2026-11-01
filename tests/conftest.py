@@ -10,9 +10,9 @@ matplotlib.use("Agg")
 import cv2  # noqa: E402  (imported after the backend is pinned)
 import matplotlib.pyplot as plt  # noqa: E402
 
-from legome.models.brick import Brick  # noqa: E402
-from legome.models.canvas import Canvas  # noqa: E402
-from legome.models.static import DIM_BASE  # noqa: E402
+from studify.models.brick import Brick  # noqa: E402
+from studify.models.canvas import Canvas  # noqa: E402
+from studify.models.static import DIM_BASE  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

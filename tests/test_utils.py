@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from legome.models.brick import Brick
-from legome.models.utils import (
+from studify.models.brick import Brick
+from studify.models.utils import (
     GRID_MAJOR_EVERY,
     dither_indices,
     get_class,
@@ -267,6 +267,32 @@ class TestReducePalette:
             reduce_palette(self._image(), self.PALETTE, 0)
         with pytest.raises(ValueError, match="cannot keep"):
             reduce_palette(self._image(), self.PALETTE, 1, keep=(0, 1))
+
+
+def _reduce_palette_one_step_at_a_time(pixels, palette, max_colors, keep=()):
+    """The definition of reduce_palette, without its bookkeeping: everything is
+    worked out afresh for each colour dropped."""
+    keys, counts = np.unique(pixels.reshape(-1, 3), axis=0, return_counts=True)
+    dist = np.sum((rgb_to_lab(keys)[:, None, :] - rgb_to_lab(palette)[None, :, :]) ** 2, axis=2)
+    selected = sorted(set(np.argmin(dist, axis=1).tolist()) | set(keep))
+    while len(selected) > max_colors:
+        ordered = np.sort(dist[:, selected], axis=1)
+        best = np.argmin(dist[:, selected], axis=1)
+        cost = np.bincount(best, weights=counts * (ordered[:, 1] - ordered[:, 0]), minlength=len(selected))
+        cost[[i for i, index in enumerate(selected) if index in keep]] = np.inf
+        selected.pop(int(np.argmin(cost)))
+    return np.array(selected)
+
+
+@pytest.mark.parametrize("seed", range(5))
+@pytest.mark.parametrize("max_colors", [1, 3, 8])
+def test_reduce_palette_matches_its_definition(seed, max_colors):
+    rng = np.random.default_rng(seed)
+    pixels = rng.integers(0, 256, (200, 3))
+    palette = rng.integers(0, 256, (30, 3))
+    keep = (int(np.argmin(np.sum((palette - pixels[0]) ** 2, axis=1))),) if max_colors > 1 else ()
+    expected = _reduce_palette_one_step_at_a_time(pixels, palette, max_colors, keep)
+    assert np.array_equal(reduce_palette(pixels, palette, max_colors, keep), expected)
 
 
 class TestRemoveStrayBricks:

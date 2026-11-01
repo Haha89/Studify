@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from legome.models.brick import Brick
+from studify.models.brick import Brick
 
 # Rows of pixels processed per nearest-colour chunk. Bounds peak memory to roughly
 # CHUNK_SIZE * len(palette) * 4 bytes, independent of image size.
@@ -115,19 +115,23 @@ def dither_indices(pixels: np.ndarray, palette: np.ndarray, strength: float = 1.
     height, width = pixels.shape[:2]
     lab = rgb_to_lab(pixels.reshape(-1, 3)).reshape(height, width, 3).astype(np.float64)
     palette_lab = rgb_to_lab(palette).astype(np.float64)
+    # As in nearest_color_indices: ||p||^2 can't change which colour is nearest.
+    palette_sq = np.sum(palette_lab**2, axis=1)
+    palette_t2 = 2 * palette_lab.T
     indices = np.empty((height, width), dtype=np.intp)
 
     for y in range(height):
         step = 1 if y % 2 == 0 else -1
+        rows = (lab[y], lab[y + 1] if y + 1 < height else None)
         for x in range(width) if step == 1 else range(width - 1, -1, -1):
-            pixel = lab[y, x]
-            index = int(np.argmin(np.sum((palette_lab - pixel) ** 2, axis=1)))
+            pixel = rows[0][x]
+            index = int((palette_sq - pixel @ palette_t2).argmin())
             indices[y, x] = index
             error = (pixel - palette_lab[index]) * strength
             for dy, dx, share in _DITHER_WEIGHTS:
-                ny, nx = y + dy, x + dx * step
-                if ny < height and 0 <= nx < width:
-                    lab[ny, nx] += error * share
+                row, nx = rows[dy], x + dx * step
+                if row is not None and 0 <= nx < width:
+                    row[nx] += error * share
     return indices
 
 
@@ -156,18 +160,38 @@ def reduce_palette(pixels: np.ndarray, palette: np.ndarray, max_colors: int, kee
     keys_lab, palette_lab = rgb_to_lab(keys), rgb_to_lab(palette)
     dist = np.sum((keys_lab[:, None, :] - palette_lab[None, :, :]) ** 2, axis=2)
 
-    selected = sorted(set(np.argmin(dist, axis=1).tolist()) | set(keep))
-    rows = np.arange(len(keys))
-    while len(selected) > max_colors:
-        sub = dist[:, selected]
-        two_best = np.argpartition(sub, 1, axis=1)[:, :2]
-        first, second = sub[rows, two_best[:, 0]], sub[rows, two_best[:, 1]]
-        best = np.where(first <= second, two_best[:, 0], two_best[:, 1])
+    selected = np.array(sorted(set(np.argmin(dist, axis=1).tolist()) | set(keep)), dtype=np.intp)
+    if len(selected) <= max_colors:
+        return selected
+
+    sub = dist[:, selected]
+    protected = np.isin(selected, keep)
+    dropped = np.zeros(len(selected), dtype=bool)
+    best, second = np.empty(len(keys), dtype=np.intp), np.empty(len(keys), dtype=np.intp)
+    best_dist, second_dist = np.empty(len(keys)), np.empty(len(keys))
+
+    def rank(rows: np.ndarray) -> None:
+        """Work out the two nearest remaining colours of the given keys."""
+        two_best = np.argpartition(sub[rows], 1, axis=1)[:, :2]
+        first = np.take_along_axis(sub[rows], two_best, axis=1)
+        swap = first[:, 0] > first[:, 1]
+        best[rows] = np.where(swap, two_best[:, 1], two_best[:, 0])
+        second[rows] = np.where(swap, two_best[:, 0], two_best[:, 1])
+        best_dist[rows], second_dist[rows] = first.min(axis=1), first.max(axis=1)
+
+    rank(np.arange(len(keys)))
+    for _ in range(len(selected) - max_colors):
         # The cost of dropping each colour: its pixels move to their runner-up.
-        cost = np.bincount(best, weights=counts * np.abs(second - first), minlength=len(selected))
-        cost[[i for i, index in enumerate(selected) if index in keep]] = np.inf
-        selected.pop(int(np.argmin(cost)))
-    return np.array(selected, dtype=np.intp)
+        cost = np.bincount(best, weights=counts * (second_dist - best_dist), minlength=len(selected))
+        cost[protected | dropped] = np.inf
+        drop = int(np.argmin(cost))
+        dropped[drop] = True
+        sub[:, drop] = np.inf
+        # Only the keys that ranked this colour first or second can change.
+        affected = np.flatnonzero((best == drop) | (second == drop))
+        if len(affected):
+            rank(affected)
+    return selected[~dropped]
 
 
 def remove_stray_bricks(
@@ -216,22 +240,29 @@ def get_distribution(bricks: list[list[Brick]]) -> dict[int, int]:
     return dict(sorted(counts.items()))
 
 
-def make_map(df: pd.DataFrame) -> str:
+def make_map(df: pd.DataFrame, regions: np.ndarray | None = None) -> str:
     """
     Render a grid of brick ids as an HTML table (sizing and borders are entirely
     CSS-driven, see ``.stud-map`` in style.css), with 1-based row and column
-    headers and a border drawn around each run of same-coloured bricks.
+    headers and a border drawn around each run of same-coloured bricks. Each cell
+    has a ``c<id>`` class, which the guide can use to tint it with its brick's colour.
 
     :param df: Grid of brick ids, one row per canvas row.
+    :param regions: Draw the borders around these numbered areas (e.g. each plate)
+        instead of around runs of one colour.
     :return: An HTML ``<table>`` fragment.
     """
     grid = np.asarray(df, dtype=int)
     rows, cols = grid.shape
+    outlined = grid if regions is None else regions
 
     header = "".join(f"<th>{col + 1}</th>" for col in range(cols))
     body = ""
     for row in range(rows):
-        cells = "".join(f'<td class="{get_class(grid, row, col)}">{grid[row, col]}</td>' for col in range(cols))
+        cells = "".join(
+            f'<td class="c{grid[row, col]} {get_class(outlined, row, col)}">{grid[row, col]}</td>'
+            for col in range(cols)
+        )
         body += f"<tr><th>{row + 1}</th>{cells}</tr>"
 
     return f'<table class="stud-map"><thead><tr><th></th>{header}</tr></thead><tbody>{body}</tbody></table>'

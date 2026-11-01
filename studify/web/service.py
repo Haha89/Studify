@@ -19,19 +19,21 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
 from urllib.parse import urlparse
 
 import cv2
 import numpy as np
 
-from legome.models.bricklink import wanted_list_xml
-from legome.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
-from legome.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
-from legome.models.utils import fit_within, read_image
-from legome.process import build_canvas
+from studify.models.bricklink import wanted_list_xml
+from studify.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
+from studify.models.plates import PLATE_SIZES
+from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
+from studify.models.utils import fit_within, read_image
+from studify.process import build_canvas
 
-SESSION_ROOT = Path(tempfile.gettempdir()) / "legome-web"
+SESSION_ROOT = Path(tempfile.gettempdir()) / "studify-web"
 # Sessions older than this are deleted whenever a new image comes in.
 SESSION_TTL_SECONDS = 24 * 3600
 MAX_IMAGE_BYTES = 15 * 1024 * 1024
@@ -101,7 +103,7 @@ _OPENER = urllib.request.build_opener(_CheckedRedirects)
 def image_bytes_from_url(url: str) -> bytes:
     """Download an image from an http(s) link, up to ``MAX_IMAGE_BYTES``."""
     _check_link(url.strip())
-    request = urllib.request.Request(url.strip(), headers={"User-Agent": "LegoMe/0.1"})
+    request = urllib.request.Request(url.strip(), headers={"User-Agent": "Studify/0.1"})
     try:
         with _OPENER.open(request, timeout=URL_TIMEOUT_SECONDS) as response:
             data = response.read(MAX_IMAGE_BYTES + 1)
@@ -250,17 +252,15 @@ def reprice(distribution: dict[str | int, int], baseplate_count: int, baseplates
     return _price_fields(estimate_price(counts, baseplate_count, baseplates, currency))
 
 
-def bricklink_download(name: str, style: str, distribution: dict[str | int, int]) -> dict[str, str]:
+def bricklink_download(name: str, style: str, wanted_list: str) -> dict[str, str]:
     """A rendered style's BrickLink wanted list, as a ``dcc.Download`` payload.
 
     :param name: The source image's original name, used to name the file.
-    :param distribution: The render's bricks, as {brick id: count}; ids may be
-        strings, see ``reprice``.
+    :param wanted_list: The list's XML, from ``render_styles``.
     """
-    counts = {int(brick_id): count for brick_id, count in distribution.items()}
     return {
-        "content": wanted_list_xml(counts),
-        "filename": f"legome-{_safe_stem(name)}-{style}-bricklink.xml",
+        "content": wanted_list,
+        "filename": f"studify-{_safe_stem(name)}-{style}-bricklink.xml",
         "type": "application/xml",
     }
 
@@ -274,14 +274,21 @@ def render_styles(
     baseplates: str = "official",
     currency: str = "EUR",
     palette: str = DEFAULT_PALETTE,
+    dither: bool = False,
+    plates: Iterable[str] = PLATE_SIZES,
+    tinted: bool = True,
 ) -> list[dict[str, object]]:
     """Fit the session's image (cropped to ``crop``, if given) once per style in
     ``STYLE_LABELS`` and return, for each, its preview image, build figures and
-    price estimate (see ``pricing.estimate_price``)."""
+    price estimate (see ``pricing.estimate_price``). ``tinted`` only concerns the PDF
+    guide, and is accepted so that the same settings can be passed to both."""
     path = _working_image(session_id, crop)
     results = []
     for style, label in STYLE_LABELS.items():
-        canvas = build_canvas(size, path, frame=frame, max_colors=max_colors, style=style, palette=palette)
+        canvas = build_canvas(
+            size, path, frame=frame, max_colors=max_colors, style=style, palette=palette, dither=dither
+        )
+        parts = canvas.get_part_counts(plates)
         rows, cols = canvas.shape
         distribution = canvas.get_distribution()
         price = canvas.get_price(baseplates, currency)
@@ -294,7 +301,9 @@ def render_styles(
                 "baseplates": canvas.baseplate_count,
                 "colors": len(distribution),
                 "bricks": sum(distribution.values()),
+                "plates": sum(parts.values()),
                 "distribution": distribution,
+                "wanted_list": wanted_list_xml(distribution, parts),
                 **_price_fields(price),
                 "rare_colors": list(price.rare_colors),
             }
@@ -312,13 +321,16 @@ def build_pdf(
     baseplates: str = "official",
     currency: str = "EUR",
     palette: str = DEFAULT_PALETTE,
+    dither: bool = False,
+    plates: Iterable[str] = PLATE_SIZES,
+    tinted: bool = True,
 ) -> Path:
     """Write the build guide for one style as a PDF and return its path."""
     if style not in STYLE_LABELS:
         raise ImageError("Style inconnu.")
     path = _working_image(session_id, crop)
-    canvas = build_canvas(size, path, frame=frame, max_colors=max_colors, style=style, palette=palette)
-    creator = PdfCreator(canvas, baseplates=baseplates, currency=currency)
+    canvas = build_canvas(size, path, frame=frame, max_colors=max_colors, style=style, palette=palette, dither=dither)
+    creator = PdfCreator(canvas, baseplates=baseplates, currency=currency, tinted=tinted, plates=plates, lang="fr")
     return creator.generate_pdf(output_dir=source_path(session_id).parent / f"guide-{style}")
 
 

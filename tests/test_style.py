@@ -4,10 +4,10 @@ import cv2
 import numpy as np
 import pytest
 
-from legome.models.brickstore import BrickStore
-from legome.models.canvas import Canvas
-from legome.models.style import STYLES, WORKING_MAX_DIMENSION, Style, outline_mask, retouch
-from legome.process import process
+from studify.models.brickstore import BrickStore
+from studify.models.canvas import Canvas
+from studify.models.style import STYLES, WORKING_MAX_DIMENSION, Style, outline_mask, retouch
+from studify.process import process
 
 
 def _saturation(img: np.ndarray) -> float:
@@ -98,8 +98,8 @@ def test_explicit_colours_override_the_style_palette(square_image, tmp_path):
 
 
 def test_build_canvas_skips_rare_colours_by_default(tmp_path):
-    from legome.models.pricing import color_tier
-    from legome.process import build_canvas
+    from studify.models.pricing import color_tier
+    from studify.process import build_canvas
 
     # Random noise spans the whole colour cube, so every palette colour has a chance.
     rng = np.random.default_rng(7)

@@ -75,7 +75,7 @@ COLORS = {
     "Metallic Silver": (165, 169, 180),
     "Metallic Green": (137, 155, 95),
     "Metallic Gold": (219, 172, 52),
-    "Medium Dark Flesh": (204, 112, 42),
+    "Medium Dark Flesh": (170, 125, 85),
     "Dark Purple": (63, 54, 145),
     "Dark Flesh": (124, 80, 58),
     "Royal Blue": (76, 97, 219),
@@ -143,6 +143,10 @@ COLORS = {
     "Trans Fire Yellow": (251, 232, 144),
     "Trans Light Royal Blue": (107, 171, 228),
     "Reddish Lilac": (142, 85, 151),
+    "Coral": (255, 109, 119),
+    "Dark Nougat": (173, 97, 64),
+    "Medium Tan": (204, 163, 115),
+    "Medium Brown": (117, 89, 69),
 }
 # A standard LEGO baseplate is 32x32 studs.
 DIM_BASE = 32

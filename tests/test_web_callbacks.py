@@ -12,9 +12,9 @@ import pytest
 
 pytest.importorskip("dash")
 
-from legome.models import pdf_creator  # noqa: E402
-from legome.web import service  # noqa: E402
-from legome.web.app import create_app  # noqa: E402
+from studify.models import pdf_creator  # noqa: E402
+from studify.web import service  # noqa: E402
+from studify.web.app import create_app  # noqa: E402
 
 STYLES = list(service.STYLE_LABELS)
 
@@ -87,10 +87,20 @@ def wildcard(kind: str, style: str) -> str:
     return json.dumps({"index": style, "type": kind}, separators=(",", ":"), sort_keys=True)
 
 
-def generate(fire, source, baseplates="official", currency="EUR", max_colors="0", crop=None, palette="buyable"):
+def generate(
+    fire,
+    source,
+    baseplates="official",
+    currency="EUR",
+    max_colors="0",
+    crop=None,
+    palette="buyable",
+    dither=False,
+    plates=("1x1", "1x2", "1x3", "1x4", "2x2"),
+):
     return fire(
         "generate_styles",
-        [1, source, crop, palette, baseplates, currency, 1, 0, max_colors],
+        [1, source, crop, palette, baseplates, currency, 1, 0, max_colors, dither, plates, True],
         "generate.n_clicks",
     )
 
@@ -226,16 +236,40 @@ class TestSelection:
         assert fire("highlight_selection", [None, None], "selected-style.data")["download-pdf"]["disabled"] is True
 
 
+class TestEnlarge:
+    def test_shows_the_clicked_style(self, fire, source):
+        previews = generate(fire, source)["previews"]["data"]
+        out = fire("enlarge_style", [[0, 1, 0], previews], wildcard("style-enlarge", "pop") + ".n_clicks")
+        assert out["preview-modal"] == {"opened": True, "title": "Pop art"}
+        assert out["preview-image"]["src"] == previews["pop"]["image"]
+
+    def test_redrawn_cards_open_nothing(self, fire, source):
+        previews = generate(fire, source)["previews"]["data"]
+        assert fire("enlarge_style", [[0, 0, 0], previews], wildcard("style-enlarge", "pop") + ".n_clicks") is None
+
+
+class TestOptions:
+    def test_plates_reach_the_wanted_list_and_are_counted(self, fire, source):
+        only_1x1, chosen = generate(fire, source, plates=["1x1"]), generate(fire, source, plates=["1x1", "1x4"])
+        assert chosen["settings"]["data"]["plates"] == ["1x1", "1x4"]
+        wanted_list = chosen["builds"]["data"]["natural"]["wanted_list"]
+        assert "<ITEMID>3710</ITEMID>" in wanted_list and "<ITEMID>3022</ITEMID>" not in wanted_list
+        assert "<ITEMID>3710</ITEMID>" not in only_1x1["builds"]["data"]["natural"]["wanted_list"]
+        assert "plaques" in str(chosen["styles"]["children"])
+
+    def test_dither_reaches_the_settings(self, fire, source):
+        assert generate(fire, source, dither=True)["settings"]["data"]["dither"] is True
+
+
 class TestDownloadBricklink:
     def test_downloads_the_selected_styles_wanted_list(self, fire, source):
         builds = generate(fire, source)["builds"]["data"]
         out = fire("download_bricklink", [1, source, builds, "pop"], "download-bricklink.n_clicks")
 
         file = out["bricklink-file"]["data"]
-        assert file["filename"] == "legome-flag-pop-bricklink.xml"
-        expected = service.bricklink_download("flag.png", "pop", builds["pop"]["distribution"])
-        assert file["content"] == expected["content"]
-        assert "<ITEMID>3024</ITEMID>" in file["content"]
+        assert file["filename"] == "studify-flag-pop-bricklink.xml"
+        assert file["content"] == builds["pop"]["wanted_list"]
+        assert "<ITEMID>" in file["content"]
 
     def test_without_a_selected_style_updates_nothing(self, fire, source):
         assert fire("download_bricklink", [1, source, {}, None], "download-bricklink.n_clicks") is None
@@ -279,7 +313,14 @@ class TestDownloadPdf:
         )
         fire("download_pdf", [1, source, repriced["settings"]["data"], "pop"], "download-pdf.n_clicks")
 
-        assert "compatible baseplates" in printed[0] and "$" in printed[0]
+        assert "baseplates compatibles" in printed[0] and "$" in printed[0]
+
+    def test_the_guide_is_in_french_and_honours_the_options(self, fire, source, printed):
+        settings = generate(fire, source)["settings"]["data"]
+        fire("download_pdf", [1, source, {**settings, "tinted": False}, "pop"], "download-pdf.n_clicks")
+
+        assert '<html lang="fr">' in printed[0] and "Plaques nécessaires" in printed[0]
+        assert "background: rgb(" not in printed[0].split("</head>")[0]
 
     def test_a_printing_failure_shows_an_error(self, fire, source, monkeypatch):
         def no_browser(html, pdf):

@@ -9,9 +9,9 @@ import cv2
 import numpy as np
 import pytest
 
-from legome.models import pdf_creator
-from legome.models.utils import read_image
-from legome.web import service
+from studify.models import pdf_creator
+from studify.models.utils import read_image
+from studify.web import service
 
 
 @pytest.fixture(autouse=True)
@@ -243,7 +243,7 @@ class TestBrowserLookup:
 
 def test_app_builds_with_every_step():
     pytest.importorskip("dash")
-    from legome.web.app import create_app
+    from studify.web.app import create_app
 
     layout = str(create_app().layout)
     for component_id in ("upload", "url", "size", "frame", "max-colors", "generate", "styles", "download-pdf"):
@@ -261,7 +261,7 @@ def test_built_pdf_finds_the_last_build(png_bytes, monkeypatch):
 
 def test_pdf_route_serves_built_guides_only(png_bytes, monkeypatch):
     pytest.importorskip("dash")
-    from legome.web.app import create_app
+    from studify.web.app import create_app
 
     monkeypatch.setattr(pdf_creator, "html_to_pdf", lambda html, pdf: pdf.write_bytes(b"%PDF-fake") and pdf)
     session = service.save_source(png_bytes, "flag.png")
@@ -271,7 +271,7 @@ def test_pdf_route_serves_built_guides_only(png_bytes, monkeypatch):
     with client.get(f"/guide/{session}/comic.pdf") as response:  # streamed: close the file
         assert response.status_code == 200
         assert response.data == b"%PDF-fake"
-        assert "filename=legome-flag-comic.pdf" in response.headers["Content-Disposition"]
+        assert "filename=studify-flag-comic.pdf" in response.headers["Content-Disposition"]
 
     assert client.get(f"/guide/{session}/pop.pdf").status_code == 404  # never built
     # Dash answers unknown paths with its page (HTML), never with a file.
@@ -325,7 +325,7 @@ class TestNextCropBox:
         pytest.importorskip("dash")
 
     def _next(self, *args):
-        from legome.web.app import next_crop_box
+        from studify.web.app import next_crop_box
 
         return next_crop_box(*args)
 

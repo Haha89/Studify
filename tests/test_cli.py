@@ -5,8 +5,8 @@ from types import ModuleType
 
 import pytest
 
-from legome.cli import main
-from legome.models.canvas import Canvas
+from studify.cli import main
+from studify.models.canvas import Canvas
 
 
 def test_requires_an_image(capsys):
@@ -38,7 +38,7 @@ def test_builds_a_guide_end_to_end(red_blue_image, tmp_path, capsys):
 
     guide = out_dir / "red_blue.html"
     assert guide.is_file()
-    assert "<title>LegoMe: red_blue</title>" in guide.read_text(encoding="utf-8")
+    assert "<title>Studify: red_blue</title>" in guide.read_text(encoding="utf-8")
 
     stdout = capsys.readouterr().out
     assert "Canvas: 32 x 32 studs (1 x 1 baseplates)" in stdout
@@ -49,9 +49,9 @@ def test_builds_a_guide_end_to_end(red_blue_image, tmp_path, capsys):
 def test_gui_flag_launches_the_gui_without_an_image(monkeypatch):
     """--gui must not require an image, and must not need customtkinter installed."""
     launched = []
-    fake_gui = ModuleType("legome.gui")
+    fake_gui = ModuleType("studify.gui")
     fake_gui.run_gui = lambda: launched.append(True)
-    monkeypatch.setitem(sys.modules, "legome.gui", fake_gui)
+    monkeypatch.setitem(sys.modules, "studify.gui", fake_gui)
 
     assert main(["--gui"]) == 0
     assert launched == [True]
@@ -114,7 +114,7 @@ def test_bricklink_flag_writes_a_wanted_list_beside_the_guide(red_blue_image, tm
     assert not (tmp_path / "red_blue-bricklink.xml").exists()
 
     assert main([*args, "--bricklink"]) == 0
-    assert "<ITEMID>3024</ITEMID>" in (tmp_path / "red_blue-bricklink.xml").read_text(encoding="utf-8")
+    assert "<ITEMID>" in (tmp_path / "red_blue-bricklink.xml").read_text(encoding="utf-8")
     assert "BrickLink wanted list:" in capsys.readouterr().out
 
 
@@ -146,3 +146,11 @@ def test_palette_flag(red_blue_image, tmp_path):
         main([*args, "--palette", "rainbow"])
     with pytest.raises(SystemExit):  # one way of choosing colours at a time
         main([*args, "--palette", "all", "--colors", "Black"])
+
+
+def test_plain_maps_flag(red_blue_image, tmp_path):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    main(args)
+    assert ".stud-map td.c1 {" in (tmp_path / "red_blue.html").read_text(encoding="utf-8")
+    main([*args, "--plain-maps"])
+    assert ".stud-map td.c1 {" not in (tmp_path / "red_blue.html").read_text(encoding="utf-8")

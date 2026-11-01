@@ -1,5 +1,5 @@
 [project]
-name = "legome"
+name = "studify"
 version = "0.1.0"
 description = "Turn any image into a LEGO mosaic build guide."
 readme = "README.md"
@@ -20,8 +20,8 @@ web = [
 ]
 
 [project.scripts]
-legome = "legome.cli:main"
-legome-web = "legome.web.app:main"
+studify = "studify.cli:main"
+studify-web = "studify.web.app:main"
 
 [dependency-groups]
 dev = [
@@ -36,7 +36,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["legome"]
+packages = ["studify"]
 
 [tool.uv]
 # Use the OS certificate store: needed behind TLS-inspecting proxies.
