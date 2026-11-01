@@ -167,8 +167,7 @@ before ordering.
 
 By default the list and the guide use 1x1, 1x2, 1x3, 1x4 and 2x2 plates wherever a colour
 allows, each within its baseplate, and the stud maps draw each plate as one box. Choose fewer
-with `--plates`; 1x1 always stays, as it is the only plate that fits a lone stud. The
-price estimate still assumes 1x1 plates, as it has no prices per size.
+with `--plates`; 1x1 always stays, as it is the only plate that fits a lone stud.
 
 ## Pricing
 
@@ -176,7 +175,9 @@ The estimate (`models/pricing.py`) is a range, not a quote:
 
 - **Bricks** are priced by how easy their colour is to buy: common colours
   EUR 0.02–0.04 a 1x1 plate, uncommon ones EUR 0.05–0.12, rare (retired or short-lived)
-  ones EUR 0.15–0.50; plus 5 % spares.
+  ones EUR 0.15–0.50; plus 5 % spares. Other parts cost a set multiple of that
+  (`PART_PRICE_FACTORS`): 1x2, 2x2 and round tiles the same, 1x3 × 1.2, 1x4 × 1.5. These come
+  from a few listings for black parts, so treat them as a rough guide.
 - **Baseplates**: EUR 8.99 for official LEGO 32x32 plates, about EUR 2 for compatible ones.
 - **Dollars** use a fixed rate (`USD_PER_EUR`), to update by hand.
 - **Shipping is not included**; on BrickLink it often outweighs the parts on small orders.

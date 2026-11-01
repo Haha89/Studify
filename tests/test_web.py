@@ -440,6 +440,6 @@ def test_reprice_matches_a_fresh_render(png_bytes):
 
     # Brick ids come back from the page as strings: it stores them as JSON.
     distribution = {str(brick_id): count for brick_id, count in official["distribution"].items()}
-    prices = service.reprice(distribution, official["baseplates"], "compatible", "USD")
+    prices = service.reprice(distribution, official["baseplates"], "compatible", "USD", official["parts"])
 
     assert prices == {key: compatible[key] for key in ("price", "price_bricks", "price_baseplates")}

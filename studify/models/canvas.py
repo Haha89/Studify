@@ -125,10 +125,15 @@ class Canvas:
         rows, cols = self.shape
         return -(-rows // DIM_BASE) * -(-cols // DIM_BASE)  # Ceiling divisions.
 
-    def get_price(self, baseplate_kind: str = "official", currency: str = "EUR") -> PriceEstimate:
+    def get_price(
+        self,
+        baseplate_kind: str = "official",
+        currency: str = "EUR",
+        parts: dict[tuple[int, str], int] | None = None,
+    ) -> PriceEstimate:
         """Return the estimated price range of the build: bricks by colour rarity,
         spares and baseplates (see ``pricing.estimate_price``)."""
-        return estimate_price(self.get_distribution(), self.baseplate_count, baseplate_kind, currency)
+        return estimate_price(self.get_distribution(), self.baseplate_count, baseplate_kind, currency, parts)
 
     def to_pixel_array(self) -> np.ndarray:
         """Return the canvas as an (rows, cols, 3) uint8 RGB array, one pixel per brick:

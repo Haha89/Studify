@@ -16,9 +16,9 @@ LABELS = {
         "official": "official LEGO",
         "compatible": "compatible",
         "no_shipping": "shipping not included",
-        "plates_note": "Priced as 1x1 plates; larger plates may cost more or less.",
+        "plates_note": "Larger plates are priced from a rough comparison of a few listings: check before ordering.",
         "round_note": "Picture in round 1x1 tiles (BrickLink 98138), one per stud, and border in plates up to 1x4, "
-        "all priced like 1x1 plates. The baseplate shows between the tiles: pick a dark one.",
+        "priced from a rough comparison of a few listings. The baseplate shows between the tiles: pick a dark one.",
         "round_tiles": "Round tiles",
         "round_size": "round 1x1",
         "border_plates": "Border plates",
@@ -54,9 +54,9 @@ LABELS = {
         "official": "LEGO officielles",
         "compatible": "compatibles",
         "no_shipping": "hors livraison",
-        "plates_note": "Prix calculé en plaques 1x1 ; les grandes plaques peuvent coûter plus ou moins cher.",
+        "plates_note": "Grandes plaques estimées d'après quelques annonces seulement : vérifie avant de commander.",
         "round_note": "Image en tuiles rondes 1x1 (BrickLink 98138), une par tenon, et bordure en plaques jusqu'à 1x4, "
-        "le tout au prix estimé des plaques 1x1. La baseplate se voit entre les tuiles : choisis-la sombre.",
+        "prix estimés d'après quelques annonces seulement. La baseplate se voit entre les tuiles : choisis-la sombre.",
         "round_tiles": "Tuiles rondes",
         "round_size": "ronde 1x1",
         "border_plates": "Plaques de bordure",
