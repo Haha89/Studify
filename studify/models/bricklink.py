@@ -12,6 +12,7 @@ from collections import Counter
 from collections.abc import Mapping
 from math import ceil
 
+from studify.models.assembly import ASSEMBLY_PART_NUMBERS
 from studify.models.pricing import SPARE_RATE
 from studify.models.static import COLORS
 
@@ -144,6 +145,12 @@ PART_COLORS = {
         (1, 2, 3, 4, 5, 6, 7, 11, 28, 34, 36, 39, 42, 47, 55, 59, 63, 68, 69, 71, 80, 85, 86, 88, 89, 90, 95)
         + (103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220)
     ),
+}
+
+# Black, the only colour the structure is listed in, is in all of these (checked
+# November 2026 for the parts specific to it), and 3022 is already above.
+PART_COLORS |= {
+    part: frozenset({BRICKLINK_COLOR_IDS["Black"]}) for part in ASSEMBLY_PART_NUMBERS if part not in PART_COLORS
 }
 
 _NAMES = list(COLORS)

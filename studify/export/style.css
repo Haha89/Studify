@@ -151,6 +151,12 @@ figcaption {
 
 /* ---------- Stud maps ---------- */
 
+/* A hidden plate, on a support layer's map. */
+.stud-map td.c-1 {
+    background: #d5d8de;
+    font-weight: 600;
+}
+
 /* The stud map is a fixed width (it must stay sharp and square); the brick list
    takes whatever room is left beside it, and drops below it if that isn't much. */
 .baseplate-layout {

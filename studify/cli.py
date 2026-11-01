@@ -95,6 +95,20 @@ def main(argv: list[str] | None = None) -> int:
         "and its border from plates up to 1x4. Overrides --plates.",
     )
     parser.add_argument(
+        "--relief",
+        choices=["flat", "stepped"],
+        default="flat",
+        help="Depth: flat (default) or stepped (subject raised on hidden plates, its core "
+        "higher still). Stepped is built from plates, so not with --round-tiles.",
+    )
+    parser.add_argument(
+        "--assembly",
+        choices=["baseplates", "panels"],
+        default="baseplates",
+        help="What to build on: baseplates (default), which need fixing to a rigid board, or the "
+        "pinned 16x16 panels and brick frame of the LEGO Art sets.",
+    )
+    parser.add_argument(
         "--lang",
         choices=list(LABELS),
         default="en",
@@ -141,6 +155,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.image is None:
         parser.error("the following arguments are required: image (or pass --gui)")
+    if args.round_tiles and args.relief != "flat":
+        parser.error("--relief stepped is built from plates, so can't be used with --round-tiles")
     if args.size < 1:
         parser.error("--size must be at least 1")
     if not 0 <= args.frame < DIM_BASE // 2:
@@ -178,6 +194,8 @@ def main(argv: list[str] | None = None) -> int:
             tinted=not args.plain_maps,
             plates=args.plates,
             round_tiles=args.round_tiles,
+            relief=args.relief,
+            assembly=args.assembly,
             lang=args.lang,
             clean_strays=not args.keep_strays,
         )

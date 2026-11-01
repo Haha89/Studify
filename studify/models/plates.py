@@ -102,19 +102,20 @@ def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.n
 
 
 def pack_baseplates(
-    grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.ndarray | None = None
+    grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.ndarray | None = None, cell: int = DIM_BASE
 ) -> list[Plate]:
-    """Pack a whole mosaic baseplate by baseplate, with rows and columns given
-    relative to the whole mosaic. See ``pack_plates`` for ``only``."""
+    """Pack a whole mosaic baseplate by baseplate, or by whatever ``cell`` studs wide
+    part it is built on, with rows and columns given relative to the whole mosaic. See
+    ``pack_plates`` for ``only``."""
     rows, cols = grid.shape
     return [
         Plate(row + plate.row, col + plate.col, plate.height, plate.width, plate.brick_id)
-        for row in range(0, rows, DIM_BASE)
-        for col in range(0, cols, DIM_BASE)
+        for row in range(0, rows, cell)
+        for col in range(0, cols, cell)
         for plate in pack_plates(
-            grid[row : row + DIM_BASE, col : col + DIM_BASE],
+            grid[row : row + cell, col : col + cell],
             sizes,
-            None if only is None else only[row : row + DIM_BASE, col : col + DIM_BASE],
+            None if only is None else only[row : row + cell, col : col + cell],
         )
     ]
 

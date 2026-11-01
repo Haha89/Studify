@@ -82,6 +82,29 @@ body {
     max-width: none;
 }
 
+.viewer-stage {
+    height: calc(100vh - 110px);
+    position: relative;
+}
+
+.viewer-stage canvas {
+    cursor: grab;
+    display: block;
+    touch-action: none;
+}
+
+.viewer-stage canvas.dragging {
+    cursor: grabbing;
+}
+
+.viewer-message {
+    color: #6b7280;
+    left: 50%;
+    position: absolute;
+    top: 45%;
+    transform: translateX(-50%);
+}
+
 #server-down {
     background: #c8102e;
     color: #fff;

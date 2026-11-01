@@ -1,0 +1,2 @@
+three.js 0.187.0, from npm, minified by jsDelivr (cdn.jsdelivr.net/npm/three@0.187.0/build/).
+three.core.js keeps that name because three.module.min.js imports it by it.

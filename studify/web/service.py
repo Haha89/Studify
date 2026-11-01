@@ -26,12 +26,14 @@ from urllib.parse import urlparse
 import cv2
 import numpy as np
 
+from studify.models.assembly import DEFAULT_ASSEMBLY
 from studify.models.bricklink import ROUND_TILE, wanted_list_xml
 from studify.models.canvas import DEFAULT_FRAME_COLOR
 from studify.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
-from studify.models.plates import PLATE_SIZES, count_parts, pack_baseplates, plate_regions
+from studify.models.plates import PLATE_SIZES
 from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
-from studify.models.realistic import render_round, render_tiles
+from studify.models.realistic import render_mosaic
+from studify.models.relief import DEFAULT_RELIEF
 from studify.models.utils import fit_within, read_image
 from studify.process import build_canvas
 
@@ -295,6 +297,8 @@ def render_styles(
     tinted: bool = True,
     round_tiles: bool = False,
     frame_color: str = DEFAULT_FRAME_COLOR,
+    relief: str = DEFAULT_RELIEF,
+    assembly: str = DEFAULT_ASSEMBLY,
 ) -> list[dict[str, object]]:
     """Fit the session's image (cropped to ``crop``, if given) once per style in
     ``STYLE_LABELS`` and return, for each, its preview image, build figures and
@@ -315,34 +319,49 @@ def render_styles(
             palette=palette,
             dither=dither,
             round_tiles=round_tiles,
+            relief=relief,
+            assembly=assembly,
         )
         rows, cols = canvas.shape
         distribution = canvas.get_distribution()
-        if round_tiles:
-            parts = canvas.get_round_part_counts()
-            regions = plate_regions(canvas.shape, canvas.border_plates())
-        else:
-            packed = pack_baseplates(canvas.get_brick_ids(), plates)
-            parts = count_parts(packed)
-            regions = plate_regions(canvas.shape, packed)
+        layout = canvas.layout(plates, round_tiles)
+        parts = layout.parts(canvas.get_brick_ids())
         np.savez_compressed(
             path_in_session(session_id, f"mosaic-{style}.npz"),
             colors=canvas.to_pixel_array(),
-            regions=regions,
-            round_tiles=round_tiles,
+            regions=layout.regions,
+            heights=layout.heights,
+            plates=np.array([[p.row, p.col, p.height, p.width] for p in layout.plates], dtype=int).reshape(-1, 4),
+            supports=np.array(
+                [
+                    [number, p.row, p.col, p.height, p.width]
+                    for number, layer in enumerate(layout.supports, start=1)
+                    for p in layer
+                ],
+                dtype=int,
+            ).reshape(-1, 5),
         )
         price = canvas.get_price(baseplates, currency, parts)
+        image = (
+            canvas.to_preview_image(round_tiles) if relief == "flat" else canvas.to_realistic_image(plates, round_tiles)
+        )
         results.append(
             {
                 "style": style,
                 "label": label,
-                "image": data_uri_from_rgb_array(canvas.to_preview_image(round_tiles)),
+                "image": data_uri_from_rgb_array(image),
                 "round_tiles": round_tiles,
+                "relief": relief,
+                "smooth": round_tiles or relief != "flat",
+                "support_count": layout.support_count,
+                "assembly": assembly,
+                "assembly_count": layout.assembly_count,
+                "priced_baseplates": price.baseplate_count,
                 "studs": f"{cols} × {rows}",
                 "baseplates": canvas.baseplate_count,
                 "colors": len(distribution),
                 "bricks": sum(distribution.values()),
-                "plates": sum(parts.values()),
+                "plates": sum(parts.values()) - layout.assembly_count,
                 "round_tile_count": sum(count for (_, part), count in parts.items() if part == ROUND_TILE),
                 "distribution": distribution,
                 "parts": [[brick_id, part, count] for (brick_id, part), count in parts.items()],
@@ -363,14 +382,34 @@ def realistic_png(session_id: str, style: str) -> bytes:
     if not mosaic.is_file():
         raise ImageError("Cette mosaïque n'a pas encore été générée.")
     with np.load(mosaic) as saved:
-        if saved["round_tiles"]:
-            pixels = render_round(saved["colors"], regions=saved["regions"])
-        else:
-            pixels = render_tiles(saved["colors"], saved["regions"])
+        pixels = render_mosaic(saved["colors"], saved["regions"], saved["heights"])
     ok, png = cv2.imencode(".png", cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR))
     if not ok:
         raise ImageError("Impossible de dessiner cette mosaïque.")
     return png.tobytes()
+
+
+def model_data(session_id: str, style: str) -> dict[str, object]:
+    """Return the pieces of the mosaic ``render_styles`` last made for a session and
+    style, for the 3D view. Grids are flat, row by row, to keep this small."""
+    if style not in STYLE_LABELS:
+        raise ImageError("Style inconnu.")
+    mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
+    if not mosaic.is_file():
+        raise ImageError("Cette mosaïque n'a pas encore été générée.")
+    with np.load(mosaic) as saved:
+        rows, cols = saved["regions"].shape
+        palette, colors = np.unique(saved["colors"].reshape(-1, 3), axis=0, return_inverse=True)
+        return {
+            "rows": rows,
+            "cols": cols,
+            "palette": [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in palette.tolist()],
+            "colors": colors.ravel().tolist(),
+            "heights": saved["heights"].ravel().tolist(),
+            "regions": saved["regions"].ravel().tolist(),
+            "plates": saved["plates"].ravel().tolist(),
+            "supports": saved["supports"].ravel().tolist(),
+        }
 
 
 def build_pdf(
@@ -388,6 +427,8 @@ def build_pdf(
     tinted: bool = True,
     round_tiles: bool = False,
     frame_color: str = DEFAULT_FRAME_COLOR,
+    relief: str = DEFAULT_RELIEF,
+    assembly: str = DEFAULT_ASSEMBLY,
 ) -> Path:
     """Write the build guide for one style as a PDF and return its path."""
     if style not in STYLE_LABELS:
@@ -403,6 +444,8 @@ def build_pdf(
         palette=palette,
         dither=dither,
         round_tiles=round_tiles,
+        relief=relief,
+        assembly=assembly,
     )
     creator = PdfCreator(
         canvas,

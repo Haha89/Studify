@@ -8,12 +8,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from studify.models.assembly import ASSEMBLIES, DEFAULT_ASSEMBLY, PANEL_STUDS, assembly_parts
 from studify.models.brick import Brick
 from studify.models.bricklink import round_tile_parts
 from studify.models.brickstore import BrickStore
 from studify.models.plates import BORDER_SIZES, PLATE_SIZES, Plate, count_parts, pack_baseplates, plate_regions
 from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
-from studify.models.realistic import render_round, render_tiles
+from studify.models.realistic import render_mosaic, render_round
+from studify.models.relief import BACKGROUND, DEFAULT_RELIEF, RELIEFS, STEPPED_PLATES, Layout, lay_out, subject_levels
 from studify.models.static import COLORS, DIM_BASE
 from studify.models.style import Style, outline_mask, retouch
 from studify.models.utils import (
@@ -49,6 +51,7 @@ class Canvas:
         name: str | None = None,
         frame: int = 0,
         frame_color: str = DEFAULT_FRAME_COLOR,
+        assembly: str = DEFAULT_ASSEMBLY,
     ):
         """
         :param bases: Number of baseplates along the longest side of the canvas.
@@ -56,7 +59,11 @@ class Canvas:
         :param name: Human-readable label, used as a heading in the build guide.
         :param frame: Width, in studs, of a frame around the mosaic. 0 for none.
         :param frame_color: Colour of that frame, a ``FRAME_COLORS`` key.
+        :param assembly: What it is built on, from ``assembly.ASSEMBLIES``.
         """
+        if assembly not in ASSEMBLIES:
+            raise ValueError(f"Unknown assembly {assembly!r}; expected one of {list(ASSEMBLIES)}")
+        self.assembly = assembly
         if frame_color not in FRAME_COLORS:
             raise ValueError(f"Unknown frame colour {frame_color!r}; expected one of {list(FRAME_COLORS)}")
         self.frame_color = FRAME_COLORS[frame_color]
@@ -65,6 +72,8 @@ class Canvas:
         if not 0 <= frame < DIM_BASE // 2:
             raise ValueError(f"frame must be between 0 and {DIM_BASE // 2 - 1} studs, got {frame}")
         self.frame = frame
+        self.relief = DEFAULT_RELIEF
+        self.levels: np.ndarray | None = None  # Subject and face grid, set by fit_from_image.
         # (top, bottom, left, right) of the picture itself within the last resized
         # image, excluding letterbox bars and frame. Set by resize_img.
         self.content_box: tuple[int, int, int, int] | None = None
@@ -119,6 +128,25 @@ class Canvas:
         distribution = dict(zip(tiles[0].tolist(), tiles[1].tolist(), strict=True))
         return round_tile_parts(distribution) | count_parts(self.border_plates())
 
+    def layout(self, sizes: Iterable[str] = PLATE_SIZES, round_tiles: bool = False) -> Layout:
+        """Return which piece goes where, given the canvas's relief.
+
+        :param sizes: Plate sizes to use.
+        :param round_tiles: Top the picture with round tiles, and its border with plates
+            up to 1x4.
+        """
+        heights = np.zeros(self.shape, dtype=int)
+        tiles = np.zeros(self.shape, dtype=bool)
+        if self.relief == "stepped":
+            heights = STEPPED_PLATES[self.levels]
+        if round_tiles:
+            tiles = ~self.border_mask()
+            sizes = BORDER_SIZES
+        if self.assembly == "panels":
+            # Each panel is built on its own, then pinned to the next.
+            return lay_out(self.get_brick_ids(), sizes, heights, tiles, PANEL_STUDS, assembly_parts(*self.shape))
+        return lay_out(self.get_brick_ids(), sizes, heights, tiles)
+
     @property
     def baseplate_count(self) -> int:
         """Number of 32x32 baseplates the canvas covers (a partial one counts whole)."""
@@ -133,7 +161,9 @@ class Canvas:
     ) -> PriceEstimate:
         """Return the estimated price range of the build: bricks by colour rarity,
         spares and baseplates (see ``pricing.estimate_price``)."""
-        return estimate_price(self.get_distribution(), self.baseplate_count, baseplate_kind, currency, parts)
+        # Panels replace baseplates, and are among the parts.
+        baseplates = 0 if self.assembly == "panels" else self.baseplate_count
+        return estimate_price(self.get_distribution(), baseplates, baseplate_kind, currency, parts)
 
     def to_pixel_array(self) -> np.ndarray:
         """Return the canvas as an (rows, cols, 3) uint8 RGB array, one pixel per brick:
@@ -175,9 +205,8 @@ class Canvas:
         """
         pixels = self.to_pixel_array()
         scale = max(1, PREVIEW_MAX_DIMENSION // max(pixels.shape[:2]))
-        if round_tiles:
-            return render_round(pixels, scale, plate_regions(self.shape, self.border_plates()))
-        return render_tiles(pixels, plate_regions(self.shape, pack_baseplates(self.get_brick_ids(), sizes)), scale)
+        layout = self.layout(sizes, round_tiles)
+        return render_mosaic(pixels, layout.regions, layout.heights, scale)
 
     def plot_canvas(self) -> None:
         """Show the canvas as an image, one pixel per brick."""
@@ -278,6 +307,7 @@ class Canvas:
         dither: bool = False,
         style: Style | None = None,
         clean_strays: bool = True,
+        relief: str = DEFAULT_RELIEF,
     ) -> None:
         """
         Fill the canvas from an image, mapping every pixel to its nearest brick
@@ -298,7 +328,10 @@ class Canvas:
         :param clean_strays: Merge isolated bricks into their surroundings (see
             ``utils.remove_stray_bricks``). Not with ``dither``, whose scattered
             bricks are the point.
+        :param relief: How to give the mosaic depth, from ``relief.RELIEFS``.
         """
+        if relief not in RELIEFS:
+            raise ValueError(f"Unknown relief {relief!r}; expected one of {list(RELIEFS)}")
         src = read_image(path)
         if src is None:
             raise FileNotFoundError(f"Could not read image: {path}")
@@ -335,3 +368,9 @@ class Canvas:
 
         # Bricks are immutable, so the same instance can be reused across the grid.
         self.bricks = [[palette[index] for index in row] for row in closest]
+
+        self.relief = relief
+        self.levels = np.full((rows, cols), BACKGROUND, dtype=int)
+        if relief != "flat":
+            top, bottom, left, right = self.content_box
+            self.levels[top:bottom, left:right] = subject_levels(resized[top:bottom, left:right])

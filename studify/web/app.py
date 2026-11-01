@@ -13,7 +13,7 @@ import dash_mantine_components as dmc
 import plotly.graph_objects as go
 from dash import ALL, Dash, Input, Output, Patch, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
-from flask import Response, abort, send_file
+from flask import Response, abort, jsonify, send_file
 
 from studify.models.plates import ONLY_1X1, PLATE_SIZES
 from studify.models.static import DIM_BASE
@@ -22,6 +22,8 @@ from studify.web import service
 SIZES = range(1, 7)  # Baseplates along the longest side.
 FRAMES = range(0, 5)  # Frame width in studs.
 FRAME_COLOR_CHOICES = [("Noir", "black"), ("Blanc", "white")]
+MODE_CHOICES = [("Plat", "flat"), ("Tuiles rondes", "round"), ("Relief", "relief")]
+ASSEMBLY_CHOICES = [("Baseplates", "baseplates"), ("Panneaux LEGO Art", "panels")]
 COLOR_LIMITS = [("Toutes", "0"), ("16", "16"), ("12", "12"), ("8", "8"), ("6", "6")]
 BASEPLATE_CHOICES = [("Officielles LEGO", "official"), ("Compatibles", "compatible")]
 CURRENCY_CHOICES = [("€", "EUR"), ("$", "USD")]
@@ -294,12 +296,51 @@ def _layout() -> dmc.MantineProvider:
                             "BrickLink, et un prix estimé plus bas. La 1x1 reste nécessaire pour les tenons isolés.",
                             value=list(PLATE_SIZES),
                         ),
-                        dmc.Switch(
-                            id="round-tiles",
-                            label="Tuiles rondes",
-                            description="Une tuile ronde 1x1 par tenon pour l'image, façon LEGO Art, et des plaques "
-                            "jusqu'à 1x4 pour la bordure. Plus de pièces à poser, et un prix estimé plus haut. "
-                            "La baseplate se voit entre les tuiles : choisis-la sombre.",
+                        dmc.Stack(
+                            [
+                                dmc.Text("Mode", fw=600, size="sm"),
+                                dmc.Text(
+                                    "Plat : uniquement des plaques carrées et rectangulaires, à la même hauteur. "
+                                    "Tuiles rondes : une tuile ronde 1x1 par tenon pour l'image, façon LEGO Art, et "
+                                    "le cadre en plaques 1x4 ; plus de pièces, un prix estimé plus haut, et la "
+                                    "baseplate se voit entre les tuiles, alors choisis-la sombre. Relief : "
+                                    "uniquement des plaques carrées et rectangulaires, le sujet surélevé sur des "
+                                    "plaques noires cachées, son centre plus haut encore, avec une carte par couche "
+                                    "dans le guide. Le sujet est détecté automatiquement et peut être imprécis ; le "
+                                    "relief n'est pas encore testé avec de vraies briques.",
+                                    c="dimmed",
+                                    size="xs",
+                                ),
+                                dmc.SegmentedControl(
+                                    id="mode",
+                                    data=[{"label": label, "value": value} for label, value in MODE_CHOICES],
+                                    value="flat",
+                                    radius="xl",
+                                    style={"alignSelf": "flex-start"},
+                                ),
+                            ],
+                            gap=6,
+                        ),
+                        dmc.Stack(
+                            [
+                                dmc.Text("Support", fw=600, size="sm"),
+                                dmc.Text(
+                                    "Baseplates : moins cher, mais elles ne se relient pas entre elles, il faut les "
+                                    "fixer sur un panneau rigide. Panneaux LEGO Art : les panneaux 16 x 16 à goujons "
+                                    "et le cadre en briques des sets officiels, à accrocher tels quels jusqu'à environ "
+                                    "1 m ; plus cher, toutes les pièces sont dans la liste. Non testé en vrai.",
+                                    c="dimmed",
+                                    size="xs",
+                                ),
+                                dmc.SegmentedControl(
+                                    id="assembly",
+                                    data=[{"label": label, "value": value} for label, value in ASSEMBLY_CHOICES],
+                                    value="baseplates",
+                                    radius="xl",
+                                    style={"alignSelf": "flex-start"},
+                                ),
+                            ],
+                            gap=6,
                         ),
                         dmc.Switch(
                             id="tinted",
@@ -407,6 +448,21 @@ def _layout() -> dmc.MantineProvider:
                 dmc.Modal(
                     [
                         dmc.Text(
+                            "Glisse pour tourner, molette pour zoomer, double-clic pour revenir au départ.",
+                            c="dimmed",
+                            size="xs",
+                            mb="sm",
+                        ),
+                        html.Div(id="viewer-stage", className="viewer-stage"),
+                    ],
+                    id="viewer-modal",
+                    fullScreen=True,
+                ),
+                dcc.Store(id="viewer-url"),
+                dcc.Store(id="viewer-done"),
+                dmc.Modal(
+                    [
+                        dmc.Text(
                             id="realistic-note",
                             c="dimmed",
                             size="xs",
@@ -427,14 +483,21 @@ def _layout() -> dmc.MantineProvider:
 
 
 def _price_detail(prices: dict[str, object]) -> str:
-    return f"Briques {prices['price_bricks']} (+5 % de rab) · baseplates {prices['price_baseplates']}"
+    baseplates = "" if prices["price_baseplates"].startswith("0 ") else f" · baseplates {prices['price_baseplates']}"
+    return f"Pièces {prices['price_bricks']} (+5 % de rab){baseplates}"
 
 
-def _round_pieces(result: dict[str, object]) -> str:
-    tiles = result["round_tile_count"]
-    border = result["plates"] - tiles
-    text = f"{tiles:,} tuiles rondes" + (f" + {border:,} plaques de bordure" if border else "")
-    return text.replace(",", " ")
+def _pieces(result: dict[str, object]) -> str:
+    """The pieces of a build mixing several kinds, which "briques, soit plaques" can't say."""
+    tiles, supports = result["round_tile_count"], result["support_count"]
+    plates = result["plates"] - tiles - supports
+    kinds = [
+        (tiles, "tuiles rondes"),
+        (plates, "plaques de bordure" if result["round_tiles"] else "plaques"),
+        (supports, "plaques cachées"),
+        (result["assembly_count"], "pièces d'assemblage"),
+    ]
+    return " + ".join(f"{count:,} {name}" for count, name in kinds if count).replace(",", " ")
 
 
 def _style_card(result: dict[str, object]) -> html.Div:
@@ -446,7 +509,7 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 dmc.CardSection(
                     html.Img(
                         src=result["image"],
-                        className="style-image smooth" if result["round_tiles"] else "style-image",
+                        className="style-image smooth" if result["smooth"] else "style-image",
                     )
                 ),
                 dmc.Group(
@@ -463,6 +526,12 @@ def _style_card(result: dict[str, object]) -> html.Div:
                             variant="subtle",
                             size="compact-xs",
                         ),
+                        dmc.Button(
+                            "Vue 3D",
+                            id={"type": "style-3d", "index": style},
+                            variant="subtle",
+                            size="compact-xs",
+                        ),
                     ],
                     gap="xs",
                     mt="xs",
@@ -475,10 +544,19 @@ def _style_card(result: dict[str, object]) -> html.Div:
                     justify="space-between",
                     mt="md",
                 ),
-                dmc.Text(f"{result['studs']} tenons · {result['baseplates']} baseplate(s)", c="dimmed", size="sm"),
                 dmc.Text(
-                    _round_pieces(result)
-                    if result["round_tiles"]
+                    f"{result['studs']} tenons · "
+                    + (
+                        f"{result['baseplates'] * 4} panneaux"
+                        if result["assembly"] == "panels"
+                        else f"{result['baseplates']} baseplate(s)"
+                    ),
+                    c="dimmed",
+                    size="sm",
+                ),
+                dmc.Text(
+                    _pieces(result)
+                    if result["round_tiles"] or result["relief"] != "flat" or result["assembly"] != "baseplates"
                     else f"{bricks} briques" + f", soit {result['plates']:,} plaques".replace(",", " "),
                     c="dimmed",
                     size="sm",
@@ -599,7 +677,8 @@ def next_crop_box(
 
 
 def create_app() -> Dash:
-    app = Dash(__name__, title="Studify")
+    # Three.js is an ES module, which viewer.js imports when needed: not a page script.
+    app = Dash(__name__, title="Studify", assets_ignore=r"^three\.")
     app.layout = _layout()
 
     @app.callback(
@@ -698,8 +777,9 @@ def create_app() -> Dash:
         State("dither", "checked"),
         State("plates", "value"),
         State("tinted", "checked"),
-        State("round-tiles", "checked"),
         State("frame-color", "value"),
+        State("mode", "value"),
+        State("assembly", "value"),
         running=[(Output("generate", "loading"), True, False)],
         prevent_initial_call=True,
     )
@@ -716,8 +796,9 @@ def create_app() -> Dash:
         dither,
         plates,
         tinted,
-        round_tiles,
         frame_color,
+        mode,
+        assembly,
     ):
         if not source:
             return no_update, no_update, no_update, no_update, no_update
@@ -733,7 +814,9 @@ def create_app() -> Dash:
             "dither": bool(dither),
             "plates": plates,
             "tinted": bool(tinted),
-            "round_tiles": bool(round_tiles),
+            "round_tiles": mode == "round",
+            "relief": "stepped" if mode == "relief" else "flat",
+            "assembly": assembly,
         }
         try:
             results = service.render_styles(source["session"], **settings)
@@ -743,15 +826,13 @@ def create_app() -> Dash:
         builds = {
             r["style"]: {
                 "distribution": r["distribution"],
-                "baseplates": r["baseplates"],
+                "baseplates": r["priced_baseplates"],
                 "wanted_list": r["wanted_list"],
                 "parts": r["parts"],
             }
             for r in results
         }
-        previews = {
-            r["style"]: {"image": r["image"], "label": r["label"], "round_tiles": r["round_tiles"]} for r in results
-        }
+        previews = {r["style"]: {"image": r["image"], "label": r["label"], "smooth": r["smooth"]} for r in results}
         return cards, settings, None, builds, previews
 
     @app.callback(
@@ -768,7 +849,7 @@ def create_app() -> Dash:
         if not ctx.triggered_id or not any(clicks) or not previews:
             raise PreventUpdate
         preview = previews[ctx.triggered_id["index"]]
-        image_class = "preview-image smooth" if preview["round_tiles"] else "preview-image"
+        image_class = "preview-image smooth" if preview["smooth"] else "preview-image"
         return True, preview["label"], preview["image"], image_class
 
     @app.server.route("/realistic/<session_id>/<style>.png")
@@ -797,12 +878,56 @@ def create_app() -> Dash:
         style = ctx.triggered_id["index"]
         # The timestamp stops the browser reusing the image of an earlier render.
         url = f"/realistic/{source['session']}/{style}.png?v={time.time_ns()}"
-        note = (
-            "Une tuile ronde par tenon, sur une baseplate sombre."
-            if (settings or {}).get("round_tiles")
-            else "Aperçu en tuiles lisses : le guide et la liste BrickLink restent en plaques à tenons."
-        )
+        settings = settings or {}
+        if settings.get("round_tiles"):
+            note = "Une tuile ronde par tenon, sur une baseplate sombre."
+        else:
+            note = "Aperçu en tuiles lisses : le guide et la liste BrickLink restent en plaques à tenons."
+        if settings.get("relief") == "stepped":
+            note += " Le sujet est surélevé sur des plaques noires cachées."
         return True, f"{service.STYLE_LABELS[style]} : rendu réaliste", url, f"{note} Clique sur l'image pour zoomer."
+
+    @app.server.route("/model/<session_id>/<style>.json")
+    def serve_model(session_id, style):
+        try:
+            return jsonify(service.model_data(session_id, style))
+        except service.ImageError:
+            abort(404)
+
+    @app.callback(
+        Output("viewer-modal", "opened"),
+        Output("viewer-modal", "title"),
+        Output("viewer-url", "data"),
+        Input({"type": "style-3d", "index": ALL}, "n_clicks"),
+        State("source", "data"),
+        prevent_initial_call=True,
+    )
+    def show_3d(clicks, source):
+        # Cards being (re)drawn also fires this, with no clicks: ignore that.
+        if not ctx.triggered_id or not any(clicks) or not source:
+            raise PreventUpdate
+        style = ctx.triggered_id["index"]
+        # The timestamp stops the browser reusing the model of an earlier render.
+        url = f"/model/{source['session']}/{style}.json?v={time.time_ns()}"
+        return True, f"{service.STYLE_LABELS[style]} : vue 3D", url
+
+    # Drawn in the browser (see assets/viewer.js), and freed as soon as the window closes.
+    app.clientside_callback(
+        """
+        function (url, opened) {
+            if (opened && url) {
+                window.studifyViewer.show("viewer-stage", url);
+            } else {
+                window.studifyViewer.hide();
+            }
+            return null;
+        }
+        """,
+        Output("viewer-done", "data"),
+        Input("viewer-url", "data"),
+        Input("viewer-modal", "opened"),
+        prevent_initial_call=True,
+    )
 
     # Zoom in the browser: nothing about it concerns the server.
     app.clientside_callback(

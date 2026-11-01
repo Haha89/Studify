@@ -3,6 +3,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections import Counter
 
+from studify.models.assembly import ASSEMBLY_PART_NUMBERS
 from studify.models.bricklink import (
     BRICKLINK_COLOR_IDS,
     PART_COLORS,
@@ -86,7 +87,7 @@ def test_every_style_palette_colour_has_a_1x1():
 
 
 def test_every_catalog_colour_is_a_real_bricklink_id():
-    assert set(PART_COLORS) == {*PLATE_PARTS.values(), ROUND_TILE}
+    assert set(PART_COLORS) == {*PLATE_PARTS.values(), ROUND_TILE, *ASSEMBLY_PART_NUMBERS}
 
 
 def test_round_palettes_only_hold_colours_the_tile_comes_in():

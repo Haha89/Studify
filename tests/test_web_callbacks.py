@@ -100,6 +100,8 @@ def generate(
     round_tiles=False,
     frame=0,
     frame_color="black",
+    relief="flat",
+    assembly="baseplates",
 ):
     return fire(
         "generate_styles",
@@ -116,8 +118,9 @@ def generate(
             dither,
             plates,
             True,
-            round_tiles,
             frame_color,
+            "round" if round_tiles else "relief" if relief == "stepped" else "flat",
+            assembly,
         ],
         "generate.n_clicks",
     )
@@ -283,6 +286,62 @@ class TestRealistic:
     def test_redrawn_cards_open_nothing(self, fire, source):
         trigger = wildcard("style-realistic", "pop") + ".n_clicks"
         assert fire("show_realistic", [[0, 0, 0], source, None], trigger) is None
+
+
+class TestModes:
+    def test_flat_uses_only_plates(self, fire, source):
+        flat = generate(fire, source)
+        assert "98138" not in flat["builds"]["data"]["natural"]["wanted_list"]
+        assert "plaques cachées" not in str(flat["styles"]["children"])
+        assert flat["settings"]["data"]["round_tiles"] is False
+        assert flat["settings"]["data"]["relief"] == "flat"
+
+    def test_round_puts_tiles_in_the_picture_and_1x4s_in_the_frame(self, fire, source):
+        built = generate(fire, source, round_tiles=True, frame=2)
+        wanted_list = built["builds"]["data"]["natural"]["wanted_list"]
+        assert "<ITEMID>98138</ITEMID>" in wanted_list and "<ITEMID>3710</ITEMID>" in wanted_list
+        assert built["settings"]["data"]["round_tiles"] is True
+        assert built["settings"]["data"]["relief"] == "flat"
+
+    def test_relief_is_raised_and_made_only_of_plates(self, fire, source):
+        built = generate(fire, source, relief="stepped")
+        assert "98138" not in built["builds"]["data"]["natural"]["wanted_list"]
+        assert "plaques cachées" in str(built["styles"]["children"])
+        assert built["settings"]["data"]["round_tiles"] is False
+        assert built["settings"]["data"]["relief"] == "stepped"
+
+
+class TestAssembly:
+    def test_panels_reach_the_list_and_the_card_and_replace_the_baseplates(self, fire, source):
+        plates = generate(fire, source)
+        panels = generate(fire, source, assembly="panels")
+
+        assert "<ITEMID>65803</ITEMID>" not in plates["builds"]["data"]["natural"]["wanted_list"]
+        assert "<ITEMID>65803</ITEMID>" in panels["builds"]["data"]["natural"]["wanted_list"]
+        assert "4 panneaux" in str(panels["styles"]["children"])
+        assert panels["settings"]["data"]["assembly"] == "panels"
+        assert panels["builds"]["data"]["natural"]["baseplates"] == 0
+
+    def test_repricing_keeps_panels_without_baseplates(self, fire, source):
+        built = generate(fire, source, assembly="panels")
+        out = fire(
+            "update_prices",
+            ["compatible", "EUR", built["settings"]["data"], built["builds"]["data"], None],
+            "baseplates.value",
+        )
+        detail = out[wildcard("style-price-detail", "natural")]["children"]
+        assert "baseplates" not in detail
+
+
+class TestViewer:
+    def test_opens_on_the_clicked_style(self, fire, source):
+        out = fire("show_3d", [[0, 1, 0], source], wildcard("style-3d", "pop") + ".n_clicks")
+        assert out["viewer-modal"]["opened"] is True
+        assert "Pop art" in out["viewer-modal"]["title"]
+        assert out["viewer-url"]["data"].startswith(f"/model/{source['session']}/pop.json?v=")
+
+    def test_redrawn_cards_open_nothing(self, fire, source):
+        assert fire("show_3d", [[0, 0, 0], source], wildcard("style-3d", "pop") + ".n_clicks") is None
 
 
 class TestFrameColor:

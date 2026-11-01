@@ -19,23 +19,30 @@
     <h1>{{ title }}</h1>
     <dl class="stats">
         <div><dt>{{ t.size }}</dt><dd>{{ mosaic_size }}</dd></div>
+        {% if assembly.panels %}
+        <div><dt>{{ t.panels }}</dt><dd>{{ assembly.down * assembly.across }}</dd></div>
+        {% else %}
         <div><dt>{{ t.baseplates }}</dt><dd>{{ bases | length }}</dd></div>
+        {% endif %}
         <div><dt>{{ t.colors }}</dt><dd>{{ total_colors }}</dd></div>
         {% if round_parts %}
         <div><dt>{{ t.round_tiles }}</dt><dd>{{ round_parts.tiles }}</dd></div>
         {% if round_parts.border %}<div><dt>{{ t.border_plates }}</dt><dd>{{ round_parts.border }}</dd></div>{% endif %}
         {% else %}
         <div><dt>{{ t.bricks }}</dt><dd>{{ total_bricks }}</dd></div>
+        {% if relief_parts and relief_parts.tiles %}<div><dt>{{ t.round_tiles }}</dt><dd>{{ relief_parts.tiles }}</dd></div>{% endif %}
         {% endif %}
+        {% if relief_parts and relief_parts.supports %}<div><dt>{{ t.support_plates }}</dt><dd>{{ relief_parts.supports }}</dd></div>{% endif %}
         {% if total_plates %}<div><dt>{{ t.plates }}</dt><dd>{{ total_plates }}</dd></div>{% endif %}
         <div><dt>{{ t.cost }}</dt><dd>{{ price.format() }}</dd></div>
     </dl>
     <p class="price-note">
         {{ t.bricks }} {{ price.format(price.bricks_low) }}&ndash;{{ price.format(price.bricks_high) }}
-        ({{ spares_note | safe }}) &middot; {{ baseplates_note }}
+        ({{ spares_note | safe }}){% if not assembly.panels %} &middot; {{ baseplates_note }}{% endif %}
         &middot; {{ t.no_shipping }}
         {% if total_plates %}<br>{{ t.plates_note }}{% endif %}
-        {% if round_tiles %}<br>{{ t.round_note }}{% endif %}
+        {% if round_tiles %}<br>{{ t.round_note }}{% if not assembly.panels %} {{ t.round_base_note }}{% endif %}{% endif %}
+        {% if relief == "stepped" %}<br>{{ t.stepped_note }}{% endif %}
     </p>
     {% if price.rare_colors %}
     <p class="price-warning">
@@ -65,13 +72,55 @@
 </section>
 {% endif %}
 
+<section class="card assembly">
+    <h2>{{ t.assembly }}</h2>
+    {% if assembly.panels %}
+    <p>{{ t.assembly_intro.format(across=assembly.across, down=assembly.down) }}</p>
+    <ol>
+        <li>{{ t.assembly_build }}</li>
+        <li>{{ t.assembly_pins.format(joins=assembly.joins) }}</li>
+        <li>{{ t.assembly_frame }}</li>
+        <li>{{ t.assembly_back }}</li>
+        <li>{{ t.assembly_tiles }}</li>
+        <li>{{ t.assembly_hang }}</li>
+    </ol>
+    <p class="price-warning">{{ t.assembly_source }}{% if assembly.too_large %} {{ t.assembly_too_large }}{% endif %}</p>
+    <table class="color-table">
+        <thead><tr><th>BrickLink</th><th>{{ t.name }}</th><th>{{ t.quantity }}</th></tr></thead>
+        <tbody>
+        {% for part in assembly.parts %}
+        <tr><td>{{ part.part }}</td><td>{{ part.name }}</td><td>{{ part.count }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="price-warning">{{ t.assembly_baseplates }}</p>
+    {% endif %}
+</section>
+
 {% for base in bases %}
+{% for support in base.supports %}
+<section class="card baseplate">
+    <h2>{{ support.name }}</h2>
+    <div class="baseplate-layout">
+        <div class="stud-map-wrap">{{ support.table | safe }}</div>
+        <div class="brick-list-wrap">
+            <h3>{{ t.support_needed }}</h3>
+            <ul class="brick-list">
+                {% for size, plates in support.sizes.items() %}
+                <li><span class="brick-count">{{ size }}&nbsp;&times;&nbsp;{{ plates }}</span></li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</section>
+{% endfor %}
 <section class="card baseplate">
     <h2>{{ base.name }}</h2>
     <div class="baseplate-layout">
         <div class="stud-map-wrap">{{ base.table | safe }}</div>
         <div class="brick-list-wrap">
-            <h3>{{ t.pieces_needed if round_tiles else (t.plates_needed if base.plates else t.needed) }}</h3>
+            <h3>{{ t.pieces_needed if round_tiles or relief != "flat" else (t.plates_needed if base.plates else t.needed) }}</h3>
             <ul class="brick-list">
                 {% for brick_id, count in base.distribution.items() %}
                 {% set color = color_by_id[brick_id] %}

@@ -336,6 +336,41 @@ def test_round_tiles_reach_the_guide(png_bytes, monkeypatch):
     assert 'class="pixelated"' not in text
 
 
+def test_model_route_describes_the_latest_render(png_bytes):
+    from studify.web.app import create_app
+
+    session = service.save_source(png_bytes, "flag.png")
+    client = create_app().server.test_client()
+    assert client.get(f"/model/{session}/pop.json").status_code == 404  # never rendered
+
+    service.render_styles(session, size=1, frame=2, max_colors=None, relief="stepped")
+    model = client.get(f"/model/{session}/pop.json").get_json()
+    studs = 32 * 32
+    assert (model["rows"], model["cols"]) == (32, 32)
+    assert len(model["colors"]) == len(model["heights"]) == len(model["regions"]) == studs
+    assert max(model["colors"]) < len(model["palette"])
+    assert all(color.startswith("#") and len(color) == 7 for color in model["palette"])
+    assert len(model["plates"]) % 4 == 0 and len(model["supports"]) % 5 == 0
+    assert model["supports"] and max(model["heights"]) == max(model["supports"][::5])
+
+    service.render_styles(session, size=1, frame=2, max_colors=None)  # Back to flat.
+    assert client.get(f"/model/{session}/pop.json").get_json()["supports"] == []
+
+    assert client.get(f"/model/{'0' * 32}/pop.json").status_code == 404  # unknown session
+    assert client.get(f"/model/{session}/baroque.json").status_code == 404
+
+
+def test_three_js_is_served_but_not_loaded_with_every_page():
+    from studify.web.app import create_app
+
+    client = create_app().server.test_client()
+    page = client.get("/").get_data(as_text=True)
+    assert "viewer.js" in page and "three.module" not in page and "three.core" not in page
+    for name in ("three.module.min.js", "three.core.js"):
+        with client.get(f"/assets/vendor/three/{name}") as response:
+            assert response.status_code == 200
+
+
 class TestCrop:
     def test_validate_crop_clamps_and_orders(self):
         assert service.validate_crop([0.8, -0.2, 0.2, 0.5]) == (0.2, 0.0, 0.8, 0.5)

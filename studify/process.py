@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
+from studify.models.assembly import DEFAULT_ASSEMBLY
 from studify.models.bricklink import (
     PLATE_1X1,
     ROUND_TILE,
@@ -16,6 +17,7 @@ from studify.models.canvas import DEFAULT_FRAME_COLOR, Canvas
 from studify.models.pdf_creator import PdfCreator
 from studify.models.plates import PLATE_SIZES
 from studify.models.pricing import DEFAULT_PALETTE
+from studify.models.relief import DEFAULT_RELIEF
 from studify.models.static import DIM_BASE
 from studify.models.style import STYLES
 
@@ -33,6 +35,8 @@ def build_canvas(
     clean_strays: bool = True,
     round_tiles: bool = False,
     frame_color: str = DEFAULT_FRAME_COLOR,
+    relief: str = DEFAULT_RELIEF,
+    assembly: str = DEFAULT_ASSEMBLY,
 ) -> Canvas:
     """
     Turn an image into a fitted LEGO mosaic, without writing anything.
@@ -56,21 +60,33 @@ def build_canvas(
     :param clean_strays: Merge isolated bricks into their surroundings.
     :param round_tiles: Build from round 1x1 tiles, so only draw from the colours they
         come in. Colours given by hand in ``colors`` are still used as they are.
+    :param relief: How to give the mosaic depth, from ``relief.RELIEFS``. A stepped
+        relief is built from plates, so not with ``round_tiles``.
+    :param assembly: What it is built on, from ``assembly.ASSEMBLIES``.
+    :raises ValueError: asking for both round tiles and a stepped relief.
     :return: The fitted canvas.
     """
-    canvas = Canvas(size, frame=frame, frame_color=frame_color)
+    if round_tiles and relief != DEFAULT_RELIEF:
+        raise ValueError("A relief is built from plates, so can't use round tiles")
+    canvas = Canvas(size, frame=frame, frame_color=frame_color, assembly=assembly)
     preset = STYLES[style]
+    part = ROUND_TILE if round_tiles else PLATE_1X1
     if colors:
         bricks = BrickStore.bricks_named(colors)
     elif full_palette:
         bricks = BrickStore.all_bricks
     elif preset.colors:
-        part = ROUND_TILE if round_tiles else PLATE_1X1
         bricks = [brick for brick in BrickStore.bricks_named(list(preset.colors)) if comes_in(brick.id, part)]
     else:
-        bricks = BrickStore.palette(palette, ROUND_TILE if round_tiles else PLATE_1X1)
+        bricks = BrickStore.palette(palette, part)
     canvas.fit_from_image(
-        path, palette=bricks, max_colors=max_colors, dither=dither, style=preset, clean_strays=clean_strays
+        path,
+        palette=bricks,
+        max_colors=max_colors,
+        dither=dither,
+        style=preset,
+        clean_strays=clean_strays,
+        relief=relief,
     )
     return canvas
 
@@ -107,7 +123,7 @@ def process(
     :param round_tiles: Build the picture from round 1x1 tiles, one per stud, and its
         border from plates up to 1x4, instead of ``plates``.
     :param options: Mosaic options passed on to ``build_canvas`` (full_palette,
-        frame, frame_color, colors, max_colors, dither, style, palette, clean_strays).
+        frame, frame_color, colors, max_colors, dither, style, palette, clean_strays, relief, assembly).
     :return: The fitted canvas.
     """
     canvas = build_canvas(size, path, round_tiles=round_tiles, **options)
@@ -117,7 +133,7 @@ def process(
     print(f"Canvas: {cols} x {rows} studs ({cols // DIM_BASE} x {rows // DIM_BASE} baseplates)")
     print(f"Colors used: {len(distribution)}")
     print(f"Total elements: {sum(distribution.values())}")
-    parts = canvas.get_round_part_counts() if round_tiles else canvas.get_part_counts(plates)
+    parts = canvas.layout(plates, round_tiles).parts(canvas.get_brick_ids())
     price = canvas.get_price(baseplates, currency, parts)
     print(
         f"Total estimated cost: {price.format()} "
