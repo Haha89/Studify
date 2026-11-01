@@ -240,6 +240,21 @@ def get_distribution(bricks: list[list[Brick]]) -> dict[int, int]:
     return dict(sorted(counts.items()))
 
 
+def _merged_cell(grid: np.ndarray, regions: np.ndarray, row: int, col: int) -> str:
+    """Return the cell for the rectangle of ``regions`` whose top-left stud is here.
+    It takes its top and left edges from that stud and its bottom and right edges
+    from the opposite one (see ``get_class``)."""
+    region = regions[row, col]
+    height = int(np.argmin(np.append(regions[row:, col] == region, False)))
+    width = int(np.argmin(np.append(regions[row, col:] == region, False)))
+    first = get_class(regions, row, col).split()
+    last = get_class(regions, row + height - 1, col + width - 1).split()
+    classes = [name for name in first if name.endswith(("top", "start"))]
+    classes += [name for name in last if name.endswith(("bottom", "end"))]
+    spans = (f' rowspan="{height}"' if height > 1 else "") + (f' colspan="{width}"' if width > 1 else "")
+    return f'<td{spans} class="c{grid[row, col]} {" ".join(classes)}">{grid[row, col]}</td>'
+
+
 def make_map(df: pd.DataFrame, regions: np.ndarray | None = None) -> str:
     """
     Render a grid of brick ids as an HTML table (sizing and borders are entirely
@@ -248,21 +263,24 @@ def make_map(df: pd.DataFrame, regions: np.ndarray | None = None) -> str:
     has a ``c<id>`` class, which the guide can use to tint it with its brick's colour.
 
     :param df: Grid of brick ids, one row per canvas row.
-    :param regions: Draw the borders around these numbered areas (e.g. each plate)
-        instead of around runs of one colour.
+    :param regions: Draw each of these numbered rectangles (e.g. each plate) as one
+        merged cell showing its brick id, rather than one cell per stud.
     :return: An HTML ``<table>`` fragment.
     """
     grid = np.asarray(df, dtype=int)
     rows, cols = grid.shape
-    outlined = grid if regions is None else regions
 
     header = "".join(f"<th>{col + 1}</th>" for col in range(cols))
     body = ""
+    seen = set()
     for row in range(rows):
-        cells = "".join(
-            f'<td class="c{grid[row, col]} {get_class(outlined, row, col)}">{grid[row, col]}</td>'
-            for col in range(cols)
-        )
+        cells = ""
+        for col in range(cols):
+            if regions is None:
+                cells += f'<td class="c{grid[row, col]} {get_class(grid, row, col)}">{grid[row, col]}</td>'
+            elif regions[row, col] not in seen:
+                seen.add(regions[row, col])
+                cells += _merged_cell(grid, regions, row, col)
         body += f"<tr><th>{row + 1}</th>{cells}</tr>"
 
     return f'<table class="stud-map"><thead><tr><th></th>{header}</tr></thead><tbody>{body}</tbody></table>'

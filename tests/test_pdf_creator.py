@@ -299,7 +299,7 @@ class TestTintedMaps:
         html = PdfCreator(two_base_canvas).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
         rgb = COLORS[list(COLORS)[1]]  # Brick id 1 is the guide's colour 1.
         assert f".stud-map td.c1 {{ background: rgb{rgb};" in html
-        assert '<td class="c1 ' in html
+        assert 'class="c1 ' in html
 
     def test_can_be_turned_off(self, two_base_canvas, tmp_path):
         html = PdfCreator(two_base_canvas, tinted=False).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")

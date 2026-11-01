@@ -145,7 +145,8 @@ PdfCreator(canvas).generate_html(output_dir="output")  # or .generate_pdf(...)
 5. **Cover** — each baseplate is covered with the largest chosen plates that fit, scanning
    from the top left (`plates.pack_plates`).
 6. **Render** — each baseplate becomes an HTML table of colour numbers, tinted with each
-   stud's colour and outlining each plate (`utils.make_map`).
+   stud's colour, where each plate is one outlined cell: a 1x4 is one long box with one
+   number, a 1x1 a single square (`utils.make_map`).
 
 ## Ordering on BrickLink
 
@@ -161,7 +162,7 @@ can still lack one; the CLI names them. Being known doesn't mean in stock: check
 before ordering.
 
 By default the list and the guide use 1x1, 1x2, 1x3, 1x4 and 2x2 plates wherever a colour
-allows, each within its baseplate, and the stud maps outline each plate. Choose fewer
+allows, each within its baseplate, and the stud maps draw each plate as one box. Choose fewer
 with `--plates`; 1x1 always stays, as it is the only plate that fits a lone stud. The
 price estimate still assumes 1x1 plates, as it has no prices per size.
 
