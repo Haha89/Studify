@@ -4,8 +4,6 @@
 window.studifyViewer = (function () {
     const THREE_URL = "/assets/vendor/three/three.module.min.js";
     const PLATE_HEIGHT = 0.4; // Of a stud's width: 3.2 mm against 8 mm.
-    const STUD_HEIGHT = 0.2;
-    const STUD_RADIUS = 0.3;
     const TILE_RADIUS = 0.46;
     const SEAM = 0.03; // Gap between plates, so that each one shows.
     const BASEPLATE_COLOR = 0x202226;
@@ -14,6 +12,11 @@ window.studifyViewer = (function () {
     const START_TURN = -0.35;
     const MAX_TILT = 1.45;
     const LARGE_MOSAIC = 96; // Studs along the longest side.
+    const PANEL_STUDS = 16;
+    const PANEL_HEIGHT = 1.6; // 1 1/3 bricks.
+    const FRAME_WIDTH = 1;
+    const FRAME_BELOW = PANEL_HEIGHT + PLATE_HEIGHT; // Down to the plates under the panels' edge.
+    const FRAME_ABOVE = 1.6; // A course of bricks and its tiles.
 
     let current = null;
     let request = 0; // Lets a slow load notice that it has been replaced.
@@ -62,6 +65,45 @@ window.studifyViewer = (function () {
         return mesh;
     }
 
+    function panelsAndFrame(THREE, scene, box, rows, cols, place) {
+        // The panels under the mosaic, then its brick frame, simplified to one solid course
+        // per panel length. The back, its pins and its hangers don't show from the front.
+        const panels = [];
+        for (let row = 0; row < rows; row += PANEL_STUDS) {
+            for (let col = 0; col < cols; col += PANEL_STUDS) {
+                panels.push([col + PANEL_STUDS / 2, row + PANEL_STUDS / 2]);
+            }
+        }
+        const lengths = [];
+        const middle = (FRAME_ABOVE - FRAME_BELOW) / 2;
+        const height = FRAME_ABOVE + FRAME_BELOW;
+        const along = function (start, end, fixed, across) {
+            for (let from = start; from < end; from += PANEL_STUDS) {
+                const to = Math.min(from + PANEL_STUDS, end);
+                lengths.push(across ? [fixed, (from + to) / 2, FRAME_WIDTH, to - from] : [(from + to) / 2, fixed, to - from, FRAME_WIDTH]);
+            }
+        };
+        const half = FRAME_WIDTH / 2;
+        // Top and bottom run the whole width; the sides fit between them.
+        along(-FRAME_WIDTH, cols + FRAME_WIDTH, -half, false);
+        along(-FRAME_WIDTH, cols + FRAME_WIDTH, rows + half, false);
+        along(0, rows, -half, true);
+        along(0, rows, cols + half, true);
+
+        return [
+            instances(THREE, scene, box, panels.length, true, function (i, matrix, color) {
+                const [x, z] = panels[i];
+                place(matrix, x, -PANEL_HEIGHT / 2, z, PANEL_STUDS - SEAM, PANEL_HEIGHT, PANEL_STUDS - SEAM);
+                color.set(SUPPORT_COLOR);
+            }),
+            instances(THREE, scene, box, lengths.length, true, function (i, matrix, color) {
+                const [x, z, wide, deep] = lengths[i];
+                place(matrix, x, middle, z, wide - SEAM, height, deep - SEAM);
+                color.set(SUPPORT_COLOR);
+            }),
+        ];
+    }
+
     function buildScene(THREE, data) {
         const {rows, cols, palette, colors, heights, regions, plates, supports} = data;
         const scene = new THREE.Scene();
@@ -73,28 +115,33 @@ window.studifyViewer = (function () {
         const box = new THREE.BoxGeometry(1, 1, 1);
         const parts = [box];
 
-        const baseplate = new THREE.Mesh(
-            box,
-            new THREE.MeshStandardMaterial({color: BASEPLATE_COLOR, roughness: 0.6})
-        );
-        baseplate.scale.set(cols, PLATE_HEIGHT, rows);
-        baseplate.position.y = -PLATE_HEIGHT / 2;
-        baseplate.receiveShadow = true;
-        scene.add(baseplate);
-        parts.push(baseplate.material);
-
         const plateCount = plates.length / 4;
         const place = (matrix, x, y, z, width, height, depth) =>
             matrix.compose(position(x, y, z), noTurn, new THREE.Vector3(width, height, depth));
 
-        const meshes = [
+        const meshes = [];
+        if (data.assembly === "panels") {
+            meshes.push(...panelsAndFrame(THREE, scene, box, rows, cols, place));
+        } else {
+            const baseplate = new THREE.Mesh(
+                box,
+                new THREE.MeshStandardMaterial({color: BASEPLATE_COLOR, roughness: 0.6})
+            );
+            baseplate.scale.set(cols, PLATE_HEIGHT, rows);
+            baseplate.position.y = -PLATE_HEIGHT / 2;
+            baseplate.receiveShadow = true;
+            scene.add(baseplate);
+            parts.push(baseplate.material);
+        }
+
+        meshes.push(
             instances(THREE, scene, box, plateCount, true, function (i, matrix, color) {
                 const [row, col, tall, wide] = plates.slice(i * 4, i * 4 + 4);
                 const y = heights[stud(row, col)] * PLATE_HEIGHT + PLATE_HEIGHT / 2;
                 place(matrix, col + wide / 2, y, row + tall / 2, wide - SEAM, PLATE_HEIGHT, tall - SEAM);
                 color.set(hex(row, col));
-            }),
-        ];
+            })
+        );
 
         // Hidden plates: only the sides of the outer ones can ever show.
         const supportCount = supports.length / 5;
@@ -109,12 +156,13 @@ window.studifyViewer = (function () {
             );
         }
 
-        // Studs on top of every visible plate, and a round tile wherever there's no plate.
-        const studsAt = [];
+        // Square and rectangular tiles are drawn above; round ones go wherever they aren't.
         const tilesAt = [];
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
-                (regions[stud(row, col)] < 0 ? tilesAt : studsAt).push(row, col);
+                if (regions[stud(row, col)] < 0) {
+                    tilesAt.push(row, col);
+                }
             }
         }
         const pegs = function (spots, radius, height, segments) {
@@ -124,15 +172,11 @@ window.studifyViewer = (function () {
                 const row = spots[i * 2];
                 const col = spots[i * 2 + 1];
                 const under = heights[stud(row, col)] * PLATE_HEIGHT;
-                // A stud stands on its plate; a tile takes the place of one.
-                const y = height === STUD_HEIGHT ? under + PLATE_HEIGHT + height / 2 : under + height / 2;
+                const y = under + height / 2;
                 matrix.compose(position(col + 0.5, y, row + 0.5), noTurn, new THREE.Vector3(1, 1, 1));
                 color.set(hex(row, col));
             });
         };
-        if (studsAt.length) {
-            meshes.push(pegs(studsAt, STUD_RADIUS, STUD_HEIGHT, Math.max(rows, cols) > LARGE_MOSAIC ? 6 : 12));
-        }
         if (tilesAt.length) {
             meshes.push(pegs(tilesAt, TILE_RADIUS, PLATE_HEIGHT, Math.max(rows, cols) > LARGE_MOSAIC ? 10 : 20));
         }

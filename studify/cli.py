@@ -71,6 +71,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Blend colors the palette lacks with Floyd-Steinberg dithering.",
     )
     parser.add_argument(
+        "--sharp-edges",
+        action="store_true",
+        help="Give each stud the colour covering most of it, so that edges between colours stay "
+        "sharp: for logos and flat graphics. Ignored with --dither.",
+    )
+    parser.add_argument(
         "--keep-strays",
         action="store_true",
         help="Keep isolated bricks instead of merging them into their surroundings.",
@@ -196,6 +202,7 @@ def main(argv: list[str] | None = None) -> int:
             round_tiles=args.round_tiles,
             relief=args.relief,
             assembly=args.assembly,
+            sharp=args.sharp_edges,
             lang=args.lang,
             clean_strays=not args.keep_strays,
         )

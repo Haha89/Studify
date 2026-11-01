@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
-from studify.models.bricklink import ROUND_TILE
+from studify.models.bricklink import PLATE_PARTS, ROUND_TILE, TILE_PARTS
 from studify.models.pdf_creator import PdfCreator
 from studify.models.plates import PLATE_SIZES
 from studify.models.realistic import render_mosaic
@@ -138,6 +138,19 @@ class TestCanvas:
         layout = canvas.layout()
         assert not layout.tiles.any()
         assert ROUND_TILE not in {part for _, part in layout.parts(canvas.get_brick_ids())}
+
+    def test_only_hidden_layers_use_plates(self, disc_image):
+        canvas = build_canvas(1, disc_image, relief="stepped", frame=2)
+        layout = canvas.layout()
+        assert all(plate.tile for plate in layout.plates)
+        assert not any(plate.tile for layer in layout.supports for plate in layer)
+        parts = {part for _, part in layout.parts(canvas.get_brick_ids())}
+        assert parts & set(TILE_PARTS.values()) and parts & set(PLATE_PARTS.values())
+
+    def test_flat_uses_no_plates_at_all(self, disc_image):
+        canvas = build_canvas(1, disc_image, frame=2)
+        parts = {part for _, part in canvas.layout().parts(canvas.get_brick_ids())}
+        assert parts <= set(TILE_PARTS.values())
 
     def test_stepped_and_round_tiles_are_refused_together(self, disc_image):
         with pytest.raises(ValueError):

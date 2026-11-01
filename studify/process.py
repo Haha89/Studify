@@ -5,8 +5,8 @@ from pathlib import Path
 
 from studify.models.assembly import DEFAULT_ASSEMBLY
 from studify.models.bricklink import (
-    PLATE_1X1,
     ROUND_TILE,
+    TILE_1X1,
     comes_in,
     unavailable_parts,
     unlisted_colors,
@@ -37,6 +37,7 @@ def build_canvas(
     frame_color: str = DEFAULT_FRAME_COLOR,
     relief: str = DEFAULT_RELIEF,
     assembly: str = DEFAULT_ASSEMBLY,
+    sharp: bool = False,
 ) -> Canvas:
     """
     Turn an image into a fitted LEGO mosaic, without writing anything.
@@ -63,6 +64,8 @@ def build_canvas(
     :param relief: How to give the mosaic depth, from ``relief.RELIEFS``. A stepped
         relief is built from plates, so not with ``round_tiles``.
     :param assembly: What it is built on, from ``assembly.ASSEMBLIES``.
+    :param sharp: Keep edges between colours sharp, for logos and flat graphics (see
+        ``Canvas.fit_from_image``). Not with ``dither``.
     :raises ValueError: asking for both round tiles and a stepped relief.
     :return: The fitted canvas.
     """
@@ -70,7 +73,7 @@ def build_canvas(
         raise ValueError("A relief is built from plates, so can't use round tiles")
     canvas = Canvas(size, frame=frame, frame_color=frame_color, assembly=assembly)
     preset = STYLES[style]
-    part = ROUND_TILE if round_tiles else PLATE_1X1
+    part = ROUND_TILE if round_tiles else TILE_1X1
     if colors:
         bricks = BrickStore.bricks_named(colors)
     elif full_palette:
@@ -87,6 +90,7 @@ def build_canvas(
         style=preset,
         clean_strays=clean_strays,
         relief=relief,
+        sharp=sharp,
     )
     return canvas
 
@@ -123,7 +127,7 @@ def process(
     :param round_tiles: Build the picture from round 1x1 tiles, one per stud, and its
         border from plates up to 1x4, instead of ``plates``.
     :param options: Mosaic options passed on to ``build_canvas`` (full_palette,
-        frame, frame_color, colors, max_colors, dither, style, palette, clean_strays, relief, assembly).
+        frame, frame_color, colors, max_colors, dither, style, palette, clean_strays, relief, assembly, sharp).
     :return: The fitted canvas.
     """
     canvas = build_canvas(size, path, round_tiles=round_tiles, **options)
@@ -152,7 +156,7 @@ def process(
         lang=lang,
         round_tiles=round_tiles,
     ).generate_html(output_dir=output_dir, open_in_browser=open_in_browser)
-    print(f"{'Pieces' if round_tiles else 'Plates'} to place: {sum(parts.values())}")
+    print(f"{'Pieces' if round_tiles else 'Tiles'} to place: {sum(parts.values())}")
     if missing := unavailable_parts(parts):
         print(f"Not sold in every size needed, per BrickLink: {', '.join(missing)}")
     print(f"Build guide: {guide}")

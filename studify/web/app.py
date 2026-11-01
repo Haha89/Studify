@@ -282,6 +282,13 @@ def _layout() -> dmc.MantineProvider:
                             label="Tramage",
                             description="Mélange les couleurs pour simuler celles qui manquent. Plus lent à calculer.",
                         ),
+                        dmc.Switch(
+                            id="sharp",
+                            label="Contours nets",
+                            description="Pour les logos et les aplats : chaque tenon prend la couleur qui le couvre le "
+                            "plus, sans teinte intermédiaire sur les bords. À éviter sur les photos. Sans effet avec "
+                            "le tramage.",
+                        ),
                         dmc.CheckboxGroup(
                             dmc.Group(
                                 [
@@ -291,8 +298,8 @@ def _layout() -> dmc.MantineProvider:
                                 mt="xs",
                             ),
                             id="plates",
-                            label="Tailles de plaques",
-                            description="Moins de pièces à poser avec les grandes plaques, dans le guide et la liste "
+                            label="Tailles de tuiles",
+                            description="Moins de pièces à poser avec les grandes tuiles, dans le guide et la liste "
                             "BrickLink, et un prix estimé plus bas. La 1x1 reste nécessaire pour les tenons isolés.",
                             value=list(PLATE_SIZES),
                         ),
@@ -300,11 +307,11 @@ def _layout() -> dmc.MantineProvider:
                             [
                                 dmc.Text("Mode", fw=600, size="sm"),
                                 dmc.Text(
-                                    "Plat : uniquement des plaques carrées et rectangulaires, à la même hauteur. "
+                                    "Plat : uniquement des tuiles lisses carrées et rectangulaires, à même hauteur. "
                                     "Tuiles rondes : une tuile ronde 1x1 par tenon pour l'image, façon LEGO Art, et "
-                                    "le cadre en plaques 1x4 ; plus de pièces, un prix estimé plus haut, et la "
+                                    "le cadre en tuiles lisses 1x4 ; plus de pièces, un prix estimé plus haut, et la "
                                     "baseplate se voit entre les tuiles, alors choisis-la sombre. Relief : "
-                                    "uniquement des plaques carrées et rectangulaires, le sujet surélevé sur des "
+                                    "uniquement des tuiles lisses carrées et rectangulaires, le sujet surélevé sur des "
                                     "plaques noires cachées, son centre plus haut encore, avec une carte par couche "
                                     "dans le guide. Le sujet est détecté automatiquement et peut être imprécis ; le "
                                     "relief n'est pas encore testé avec de vraies briques.",
@@ -403,7 +410,7 @@ def _layout() -> dmc.MantineProvider:
     download = _step(
         4,
         "Télécharge le guide",
-        "Un PDF A4 : l'aperçu, puis une page par baseplate avec la carte des tenons et la liste des plaques.",
+        "Un PDF A4 : l'aperçu, puis une page par baseplate avec la carte des tenons et la liste des pièces.",
         dmc.Group(
             [
                 dmc.Button("Télécharger le PDF", id="download-pdf", size="md", disabled=True),
@@ -493,7 +500,7 @@ def _pieces(result: dict[str, object]) -> str:
     plates = result["plates"] - tiles - supports
     kinds = [
         (tiles, "tuiles rondes"),
-        (plates, "plaques de bordure" if result["round_tiles"] else "plaques"),
+        (plates, "tuiles de bordure" if result["round_tiles"] else "tuiles"),
         (supports, "plaques cachées"),
         (result["assembly_count"], "pièces d'assemblage"),
     ]
@@ -557,7 +564,7 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 dmc.Text(
                     _pieces(result)
                     if result["round_tiles"] or result["relief"] != "flat" or result["assembly"] != "baseplates"
-                    else f"{bricks} briques" + f", soit {result['plates']:,} plaques".replace(",", " "),
+                    else f"{bricks} briques" + f", soit {result['plates']:,} tuiles".replace(",", " "),
                     c="dimmed",
                     size="sm",
                 ),
@@ -780,6 +787,7 @@ def create_app() -> Dash:
         State("frame-color", "value"),
         State("mode", "value"),
         State("assembly", "value"),
+        State("sharp", "checked"),
         running=[(Output("generate", "loading"), True, False)],
         prevent_initial_call=True,
     )
@@ -799,6 +807,7 @@ def create_app() -> Dash:
         frame_color,
         mode,
         assembly,
+        sharp,
     ):
         if not source:
             return no_update, no_update, no_update, no_update, no_update
@@ -817,6 +826,7 @@ def create_app() -> Dash:
             "round_tiles": mode == "round",
             "relief": "stepped" if mode == "relief" else "flat",
             "assembly": assembly,
+            "sharp": bool(sharp),
         }
         try:
             results = service.render_styles(source["session"], **settings)
@@ -882,7 +892,7 @@ def create_app() -> Dash:
         if settings.get("round_tiles"):
             note = "Une tuile ronde par tenon, sur une baseplate sombre."
         else:
-            note = "Aperçu en tuiles lisses : le guide et la liste BrickLink restent en plaques à tenons."
+            note = "Tuiles lisses, carrées et rectangulaires, comme dans le guide et la liste BrickLink."
         if settings.get("relief") == "stepped":
             note += " Le sujet est surélevé sur des plaques noires cachées."
         return True, f"{service.STYLE_LABELS[style]} : rendu réaliste", url, f"{note} Clique sur l'image pour zoomer."

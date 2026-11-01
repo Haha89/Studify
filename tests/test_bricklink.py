@@ -7,9 +7,10 @@ from studify.models.assembly import ASSEMBLY_PART_NUMBERS
 from studify.models.bricklink import (
     BRICKLINK_COLOR_IDS,
     PART_COLORS,
-    PLATE_1X1,
     PLATE_PARTS,
     ROUND_TILE,
+    TILE_1X1,
+    TILE_PARTS,
     comes_in,
     round_tile_parts,
     unavailable_parts,
@@ -40,10 +41,10 @@ def test_only_the_two_names_for_royal_blue_share_an_id():
     assert COLORS["Blue-Violet"] == COLORS["Royal Blue"]
 
 
-def test_lists_1x1_plates_as_parts():
+def test_lists_1x1_tiles_as_parts():
     item = ET.fromstring(wanted_list_xml({NAMES.index("Black"): 10}))[0]
     assert item.findtext("ITEMTYPE") == "P"
-    assert item.findtext("ITEMID") == PLATE_1X1 == "3024"
+    assert item.findtext("ITEMID") == TILE_1X1 == "3070"
     assert item.findtext("COLOR") == "11"
 
 
@@ -78,16 +79,16 @@ def test_unavailable_parts_names_the_colour():
 
 def test_every_palette_colour_has_a_1x1():
     for name in ("buyable", "all", "common"):
-        assert all(comes_in(brick.id, PLATE_1X1) for brick in BrickStore.palette(name))
+        assert all(comes_in(brick.id, TILE_1X1) for brick in BrickStore.palette(name))
 
 
 def test_every_style_palette_colour_has_a_1x1():
     for style in STYLES.values():
-        assert all(comes_in(NAMES.index(name), PLATE_1X1) for name in style.colors or ())
+        assert all(comes_in(NAMES.index(name), TILE_1X1) for name in style.colors or ())
 
 
 def test_every_catalog_colour_is_a_real_bricklink_id():
-    assert set(PART_COLORS) == {*PLATE_PARTS.values(), ROUND_TILE, *ASSEMBLY_PART_NUMBERS}
+    assert set(PART_COLORS) == {*PLATE_PARTS.values(), *TILE_PARTS.values(), ROUND_TILE, *ASSEMBLY_PART_NUMBERS}
 
 
 def test_round_palettes_only_hold_colours_the_tile_comes_in():

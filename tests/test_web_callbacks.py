@@ -102,6 +102,7 @@ def generate(
     frame_color="black",
     relief="flat",
     assembly="baseplates",
+    sharp=False,
 ):
     return fire(
         "generate_styles",
@@ -121,6 +122,7 @@ def generate(
             frame_color,
             "round" if round_tiles else "relief" if relief == "stepped" else "flat",
             assembly,
+            sharp,
         ],
         "generate.n_clicks",
     )
@@ -275,7 +277,7 @@ class TestRealistic:
         assert out["realistic-modal"]["opened"] is True
         assert "Pop art" in out["realistic-modal"]["title"]
         assert out["realistic-image"]["src"].startswith(f"/realistic/{source['session']}/pop.png?v=")
-        assert "plaques à tenons" in out["realistic-note"]["children"]
+        assert "Tuiles lisses" in out["realistic-note"]["children"]
 
     def test_says_when_the_build_really_is_round_tiles(self, fire, source):
         settings = generate(fire, source, round_tiles=True)["settings"]["data"]
@@ -299,7 +301,7 @@ class TestModes:
     def test_round_puts_tiles_in_the_picture_and_1x4s_in_the_frame(self, fire, source):
         built = generate(fire, source, round_tiles=True, frame=2)
         wanted_list = built["builds"]["data"]["natural"]["wanted_list"]
-        assert "<ITEMID>98138</ITEMID>" in wanted_list and "<ITEMID>3710</ITEMID>" in wanted_list
+        assert "<ITEMID>98138</ITEMID>" in wanted_list and "<ITEMID>2431</ITEMID>" in wanted_list
         assert built["settings"]["data"]["round_tiles"] is True
         assert built["settings"]["data"]["relief"] == "flat"
 
@@ -333,6 +335,12 @@ class TestAssembly:
         assert "baseplates" not in detail
 
 
+class TestSharpEdges:
+    def test_reaches_the_settings(self, fire, source):
+        assert generate(fire, source, sharp=True)["settings"]["data"]["sharp"] is True
+        assert generate(fire, source)["settings"]["data"]["sharp"] is False
+
+
 class TestViewer:
     def test_opens_on_the_clicked_style(self, fire, source):
         out = fire("show_3d", [[0, 1, 0], source], wildcard("style-3d", "pop") + ".n_clicks")
@@ -350,14 +358,14 @@ class TestFrameColor:
         assert white["settings"]["data"]["frame_color"] == "white"
         wanted_list = white["builds"]["data"]["natural"]["wanted_list"]
         # White is BrickLink colour 1: 60 x 1x4 for this frame, plus 5 % spares.
-        assert "<ITEMID>3710</ITEMID><COLOR>1</COLOR><MINQTY>63</MINQTY>" in wanted_list
+        assert "<ITEMID>2431</ITEMID><COLOR>1</COLOR><MINQTY>63</MINQTY>" in wanted_list
 
 
 class TestRoundTiles:
     def test_the_whole_build_uses_round_tiles(self, fire, source):
         out = generate(fire, source, round_tiles=True)
         wanted_list = out["builds"]["data"]["natural"]["wanted_list"]
-        assert "<ITEMID>98138</ITEMID>" in wanted_list and "<ITEMID>3024</ITEMID>" not in wanted_list
+        assert "<ITEMID>98138</ITEMID>" in wanted_list and "<ITEMID>3070</ITEMID>" not in wanted_list
         assert "tuiles rondes" in str(out["styles"]["children"])
 
     def test_the_enlarged_view_stays_smooth(self, fire, source):
@@ -371,9 +379,9 @@ class TestOptions:
         only_1x1, chosen = generate(fire, source, plates=["1x1"]), generate(fire, source, plates=["1x1", "1x4"])
         assert chosen["settings"]["data"]["plates"] == ["1x1", "1x4"]
         wanted_list = chosen["builds"]["data"]["natural"]["wanted_list"]
-        assert "<ITEMID>3710</ITEMID>" in wanted_list and "<ITEMID>3022</ITEMID>" not in wanted_list
-        assert "<ITEMID>3710</ITEMID>" not in only_1x1["builds"]["data"]["natural"]["wanted_list"]
-        assert "plaques" in str(chosen["styles"]["children"])
+        assert "<ITEMID>2431</ITEMID>" in wanted_list and "<ITEMID>3068</ITEMID>" not in wanted_list
+        assert "<ITEMID>2431</ITEMID>" not in only_1x1["builds"]["data"]["natural"]["wanted_list"]
+        assert "tuiles" in str(chosen["styles"]["children"])
 
     def test_dither_reaches_the_settings(self, fire, source):
         assert generate(fire, source, dither=True)["settings"]["data"]["dither"] is True
@@ -437,7 +445,7 @@ class TestDownloadPdf:
         settings = generate(fire, source)["settings"]["data"]
         fire("download_pdf", [1, source, {**settings, "tinted": False}, "pop"], "download-pdf.n_clicks")
 
-        assert '<html lang="fr">' in printed[0] and "Plaques nécessaires" in printed[0]
+        assert '<html lang="fr">' in printed[0] and "Tuiles nécessaires" in printed[0]
         assert "background: rgb(" not in printed[0].split("</head>")[0]
 
     def test_a_printing_failure_shows_an_error(self, fire, source, monkeypatch):

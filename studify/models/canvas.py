@@ -105,7 +105,7 @@ class Canvas:
     def get_part_counts(self, sizes: Iterable[str] = PLATE_SIZES) -> dict[tuple[int, str], int]:
         """Return the parts needed with these plate sizes, as {(brick id, BrickLink
         part number): how many} (see ``plates.pack_plates``)."""
-        return count_parts(pack_baseplates(self.get_brick_ids(), sizes)) if self.bricks else {}
+        return count_parts(pack_baseplates(self.get_brick_ids(), sizes, tile=True)) if self.bricks else {}
 
     def border_mask(self) -> np.ndarray:
         """Return a boolean grid of the studs around the picture: its frame and any
@@ -119,7 +119,7 @@ class Canvas:
 
     def border_plates(self) -> list[Plate]:
         """Return the plates covering the border of a mosaic made of round tiles."""
-        return pack_baseplates(self.get_brick_ids(), BORDER_SIZES, self.border_mask())
+        return pack_baseplates(self.get_brick_ids(), BORDER_SIZES, self.border_mask(), tile=True)
 
     def get_round_part_counts(self) -> dict[tuple[int, str], int]:
         """Return the parts of a mosaic made of round tiles, with plates around the
@@ -299,6 +299,18 @@ class Canvas:
             value=LETTERBOX_COLOR,
         )
 
+    def _majority_indices(self, src: np.ndarray, colors: np.ndarray) -> np.ndarray:
+        """Return, for each stud of the resized image, the index of the colour that
+        covers most of it, with every source pixel first snapped to its nearest colour."""
+        packed = src[..., 0].astype(np.int32) << 16 | src[..., 1].astype(np.int32) << 8 | src[..., 2]
+        # Only once per distinct colour: flat graphics have few, and photos aren't the point.
+        distinct, inverse = np.unique(packed, return_inverse=True)
+        rgb = np.stack([distinct >> 16, distinct >> 8 & 255, distinct & 255], axis=1)
+        nearest = nearest_color_indices(rgb, colors)[inverse.ravel()].reshape(packed.shape)
+        used = np.unique(nearest)
+        shares = [self.resize_img(np.uint8(nearest == index) * 255) for index in used]
+        return used[np.argmax(np.stack(shares), axis=0)]
+
     def fit_from_image(
         self,
         path: str | Path,
@@ -308,6 +320,7 @@ class Canvas:
         style: Style | None = None,
         clean_strays: bool = True,
         relief: str = DEFAULT_RELIEF,
+        sharp: bool = False,
     ) -> None:
         """
         Fill the canvas from an image, mapping every pixel to its nearest brick
@@ -329,6 +342,10 @@ class Canvas:
             ``utils.remove_stray_bricks``). Not with ``dither``, whose scattered
             bricks are the point.
         :param relief: How to give the mosaic depth, from ``relief.RELIEFS``.
+        :param sharp: Give each stud the colour covering most of it, rather than the
+            one nearest the average of what it covers, which turns the edge between
+            two colours into a line of a third: for logos and flat graphics. Not with
+            ``dither``, which blends on purpose.
         """
         if relief not in RELIEFS:
             raise ValueError(f"Unknown relief {relief!r}; expected one of {list(RELIEFS)}")
@@ -354,6 +371,9 @@ class Canvas:
 
         rows, cols = resized.shape[:2]
         closest = nearest_color_indices(resized.reshape(-1, 3), colors).reshape(rows, cols)
+        if sharp and not dither:
+            top, bottom, left, right = self.content_box
+            closest[top:bottom, left:right] = self._majority_indices(src, colors)[top:bottom, left:right]
         if dither:
             top, bottom, left, right = self.content_box
             closest[top:bottom, left:right] = dither_indices(resized[top:bottom, left:right], colors)

@@ -96,8 +96,8 @@ class Layout:
     """Which piece goes where in a mosaic."""
 
     heights: np.ndarray  # Plates stacked under each stud's visible piece.
-    tiles: np.ndarray  # Studs topped by a round tile.
-    plates: list[Plate]  # Visible plates, covering every other stud.
+    tiles: np.ndarray  # Studs topped by a round tile, rather than a square or rectangular one.
+    plates: list[Plate]  # Visible square and rectangular tiles, covering every other stud.
     supports: list[list[Plate]]  # Hidden plates by layer, the lowest first.
     # What holds it together, if not just baseplates (see ``assembly.assembly_parts``).
     assembly: dict[tuple[int, str], int] = field(default_factory=dict)
@@ -159,7 +159,7 @@ def lay_out(
     plates = [
         plate
         for height in np.unique(heights).tolist()
-        for plate in pack_baseplates(brick_ids, sizes, (heights == height) & ~tiles, cell)
+        for plate in pack_baseplates(brick_ids, sizes, (heights == height) & ~tiles, cell, tile=True)
     ]
     supports = [_support_layer(heights >= layer, layer % 2 == 0, cell) for layer in range(1, int(heights.max()) + 1)]
     return Layout(heights, tiles, plates, supports, assembly or {})

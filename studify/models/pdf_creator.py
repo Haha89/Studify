@@ -137,7 +137,14 @@ def data_uri_from_rgb_array(rgb: np.ndarray) -> str:
 def _plates_on_base(plates: list[Plate], row: int, col: int) -> list[Plate]:
     """Return the plates on one baseplate, with rows and columns relative to it."""
     return [
-        Plate(plate.row - row * DIM_BASE, plate.col - col * DIM_BASE, plate.height, plate.width, plate.brick_id)
+        Plate(
+            plate.row - row * DIM_BASE,
+            plate.col - col * DIM_BASE,
+            plate.height,
+            plate.width,
+            plate.brick_id,
+            plate.tile,
+        )
         for plate in plates
         if plate.row // DIM_BASE == row and plate.col // DIM_BASE == col
     ]

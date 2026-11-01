@@ -1,5 +1,5 @@
 from studify.models.brick import Brick
-from studify.models.bricklink import PLATE_1X1, comes_in
+from studify.models.bricklink import TILE_1X1, comes_in
 from studify.models.pricing import PALETTE_TIERS, color_tier
 from studify.models.static import COLORS
 
@@ -42,10 +42,10 @@ class BrickStore:
     ]
 
     @classmethod
-    def palette(cls, name: str, part: str = PLATE_1X1) -> list[Brick]:
+    def palette(cls, name: str, part: str = TILE_1X1) -> list[Brick]:
         """Return the plain buildable bricks in a ``pricing.PALETTE_TIERS`` palette:
         "buyable" (no rare colours), "all", or "common" only. A colour this part doesn't
-        come in is left out of all of them. By default that part is the 1x1 plate, as
+        come in is left out of all of them. By default that part is the 1x1 tile, as
         nothing else can cover a lone stud."""
         if name not in PALETTE_TIERS:
             raise ValueError(f"Unknown palette {name!r}; expected one of {list(PALETTE_TIERS)}")

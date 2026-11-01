@@ -299,6 +299,7 @@ def render_styles(
     frame_color: str = DEFAULT_FRAME_COLOR,
     relief: str = DEFAULT_RELIEF,
     assembly: str = DEFAULT_ASSEMBLY,
+    sharp: bool = False,
 ) -> list[dict[str, object]]:
     """Fit the session's image (cropped to ``crop``, if given) once per style in
     ``STYLE_LABELS`` and return, for each, its preview image, build figures and
@@ -321,6 +322,7 @@ def render_styles(
             round_tiles=round_tiles,
             relief=relief,
             assembly=assembly,
+            sharp=sharp,
         )
         rows, cols = canvas.shape
         distribution = canvas.get_distribution()
@@ -331,6 +333,7 @@ def render_styles(
             colors=canvas.to_pixel_array(),
             regions=layout.regions,
             heights=layout.heights,
+            assembly=assembly,
             plates=np.array([[p.row, p.col, p.height, p.width] for p in layout.plates], dtype=int).reshape(-1, 4),
             supports=np.array(
                 [
@@ -403,6 +406,7 @@ def model_data(session_id: str, style: str) -> dict[str, object]:
         return {
             "rows": rows,
             "cols": cols,
+            "assembly": str(saved["assembly"]),
             "palette": [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in palette.tolist()],
             "colors": colors.ravel().tolist(),
             "heights": saved["heights"].ravel().tolist(),
@@ -429,6 +433,7 @@ def build_pdf(
     frame_color: str = DEFAULT_FRAME_COLOR,
     relief: str = DEFAULT_RELIEF,
     assembly: str = DEFAULT_ASSEMBLY,
+    sharp: bool = False,
 ) -> Path:
     """Write the build guide for one style as a PDF and return its path."""
     if style not in STYLE_LABELS:
@@ -446,6 +451,7 @@ def build_pdf(
         round_tiles=round_tiles,
         relief=relief,
         assembly=assembly,
+        sharp=sharp,
     )
     creator = PdfCreator(
         canvas,
