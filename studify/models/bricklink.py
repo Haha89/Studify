@@ -12,10 +12,17 @@ from collections import Counter
 from collections.abc import Mapping
 from math import ceil
 
-from studify.models.plates import PLATE_PARTS
 from studify.models.pricing import SPARE_RATE
 from studify.models.static import COLORS
 
+# BrickLink part number of each plate, by (short side, long side).
+PLATE_PARTS = {
+    (1, 1): "3024",
+    (1, 2): "3023",
+    (1, 3): "3623",
+    (1, 4): "3710",
+    (2, 2): "3022",
+}
 # Plate 1 x 1: what a mosaic is made of, unless it uses larger plates.
 PLATE_1X1 = PLATE_PARTS[1, 1]
 
@@ -107,7 +114,43 @@ BRICKLINK_COLOR_IDS = {
     "Yellowish Green": 158,
 }
 
+# The plain BrickLink colours each plate is known in, from the "Known Colors" of its
+# catalog page (checked October 2026, e.g. bricklink.com/v2/catalog/catalogitem.page?P=3024).
+PART_COLORS = {
+    "3024": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 23, 28, 31, 34, 36, 39, 42, 47, 48, 49, 55, 56, 59, 63, 68, 69, 71, 72)
+        + (80, 85, 86, 88, 89, 90, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220, 241)
+    ),
+    "3023": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 23, 28, 31, 34, 36, 39, 41, 42, 47, 48, 55, 56, 58, 59, 63, 68, 69, 71)
+        + (72, 80, 85, 86, 87, 88, 89, 90, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220, 241)
+    ),
+    "3623": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 23, 34, 36, 39, 42, 47, 48, 55, 56, 59, 63, 68, 69, 71, 72, 80, 85)
+        + (86, 88, 89, 90, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158)
+    ),
+    "3710": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 24, 28, 31, 33, 34, 36, 39, 42, 47, 48, 55, 59, 63, 68, 69, 71, 72, 80)
+        + (85, 86, 87, 88, 89, 90, 103, 104, 105, 109, 110, 120, 150, 152, 153, 155, 156, 157, 158, 220, 241)
+    ),
+    "3022": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 24, 29, 33, 34, 36, 39, 42, 47, 48, 55, 59, 63, 68, 69, 71, 72, 85, 86)
+        + (88, 89, 93, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 241)
+    ),
+}
+
 _NAMES = list(COLORS)
+
+
+def comes_in(brick_id: int, part: str) -> bool:
+    """Whether BrickLink knows this plate in this palette colour."""
+    return BRICKLINK_COLOR_IDS.get(_NAMES[brick_id]) in PART_COLORS[part]
+
+
+def unavailable_parts(parts: Mapping[tuple[int, str], int]) -> list[str]:
+    """Return the colours of parts BrickLink doesn't know in that colour. Only a colour
+    chosen by hand can have any, as the palettes leave out what can't be built."""
+    return sorted({_NAMES[brick_id] for brick_id, part in parts if not comes_in(brick_id, part)})
 
 
 def unlisted_colors(distribution: Mapping[int, int]) -> list[str]:

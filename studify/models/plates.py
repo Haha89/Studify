@@ -4,8 +4,7 @@ Which sizes to use is a choice, though 1x1 is always among them: it is the only
 plate that can cover a stud with no same-coloured neighbour.
 
 Plates stay within their baseplate, so each page of the guide can be built on its
-own. Whether a colour actually comes in a given size varies: BrickLink reports any
-that don't when the wanted list is uploaded.
+own, and only sizes that BrickLink knows in a colour are used for it.
 """
 
 from __future__ import annotations
@@ -16,16 +15,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from studify.models.bricklink import PLATE_PARTS, comes_in
 from studify.models.static import DIM_BASE
 
-# BrickLink part number of each plate, by (short side, long side).
-PLATE_PARTS = {
-    (1, 1): "3024",
-    (1, 2): "3023",
-    (1, 3): "3623",
-    (1, 4): "3710",
-    (2, 2): "3022",
-}
 # Every size, as written in the guide and on the command line. All are used by default.
 PLATE_SIZES = tuple(f"{short}x{long}" for short, long in PLATE_PARTS)
 ONLY_1X1 = ("1x1",)
@@ -72,7 +64,9 @@ class Plate:
 def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES) -> list[Plate]:
     """
     Cover a grid of brick ids with plates, greedily: scanning from the top left,
-    each uncovered stud starts the largest plate of one colour that fits there.
+    each uncovered stud starts the largest plate of one colour that fits there and
+    exists in that colour. A 1x1 is the last resort, even in a colour without one:
+    every stud must be covered (see ``bricklink.unavailable_parts``).
 
     :param grid: (rows, cols) array of brick ids, usually one baseplate.
     :param sizes: Which plates to use, from ``PLATE_SIZES``.
@@ -88,6 +82,10 @@ def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES) -> list[Pl
                 continue
             brick_id = int(grid[row, col])
             for height, width in shapes:
+                if (height, width) != (1, 1) and not comes_in(
+                    brick_id, PLATE_PARTS[min(height, width), max(height, width)]
+                ):
+                    continue
                 area = (row, row + height), (col, col + width)
                 if area[0][1] > rows or area[1][1] > cols:
                     continue

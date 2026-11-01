@@ -17,7 +17,7 @@ from studify.models.plates import (
     plate_regions,
     plate_sizes,
 )
-from studify.models.static import DIM_BASE
+from studify.models.static import COLORS, DIM_BASE
 
 
 def assert_exact_cover(grid, plates):
@@ -68,6 +68,18 @@ class TestPackPlates:
 
     def test_1x1_fills_what_the_chosen_sizes_cannot(self):
         assert {plate.size for plate in pack_plates(np.ones((1, 3), dtype=int), ["1x2"])} == {"1x1", "1x2"}
+
+
+class TestAvailability:
+    def test_skips_sizes_that_do_not_exist_in_the_colour(self):
+        coral = list(COLORS).index("Coral")  # Comes in 1x1, 1x2 and 1x4, not 1x3 or 2x2.
+        sizes = {plate.size for plate in pack_plates(np.full((3, 3), coral), PLATE_SIZES)}
+        assert "2x2" not in sizes and "1x3" not in sizes
+
+    def test_a_colour_without_a_1x1_is_still_covered(self):
+        purple = list(COLORS).index("Purple")  # Comes in 1x4 and 2x2 only.
+        grid = np.full((1, 1), purple)
+        assert pack_plates(grid) == [Plate(0, 0, 1, 1, purple)]
 
 
 class TestPlateSizes:

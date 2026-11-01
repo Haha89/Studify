@@ -25,8 +25,8 @@ with a 2-stud black frame:
 | Original | Natural | Pop (`--style pop`) | Comic (`--style comic`) |
 | :---: | :---: | :---: | :---: |
 | <img src="docs/images/dog-original.png" width="200" alt="Original picture"> | <img src="docs/images/dog-natural.png" width="200" alt="Natural mosaic"> | <img src="docs/images/dog-pop.png" width="200" alt="Pop-art mosaic"> | <img src="docs/images/dog-comic.png" width="200" alt="Comic mosaic"> |
-| | 58 colours | 12 colours | 58 colours |
-| | 402–807 € | 291–512 € | 353–677 € |
+| | 45 colours | 12 colours | 42 colours |
+| | 363–704 € | 287–501 € | 323–599 € |
 
 Prices are estimates with official LEGO baseplates, shipping excluded (see
 [Pricing](#pricing)). The pop style's short palette makes it the cheapest to build.
@@ -149,12 +149,16 @@ PdfCreator(canvas).generate_html(output_dir="output")  # or .generate_pdf(...)
 
 ## Ordering on BrickLink
 
-`--bricklink` (or the web app's "Liste BrickLink" button) writes a wanted list of the
+`--bricklink` (or the web app's copy and download buttons) gives you a wanted list of the
 plates a build uses, with 5 % spares, rounded up. On BrickLink's
 [upload page](https://www.bricklink.com/v2/wanted/upload.page), choose "Upload BrickLink XML
 format" and paste the file's contents: it takes text, not a file. The web app links to it. Baseplates are not in the list. Speciality finishes from
 `--full-palette` aren't either; any a build uses are printed so you can add them by hand.
-Not every colour exists in every size, so check what BrickLink reports on upload.
+BrickLink accepts a line even if nobody makes that part in that colour, so Studify only
+uses sizes listed in BrickLink's catalog for each colour (`bricklink.PART_COLORS`), and
+its palettes leave out colours with no 1x1 plate. Colours chosen by hand with `--colors`
+can still lack one; the CLI names them. Being known doesn't mean in stock: check sellers
+before ordering.
 
 By default the list and the guide use 1x1, 1x2, 1x3, 1x4 and 2x2 plates wherever a colour
 allows, each within its baseplate, and the stud maps outline each plate. Choose fewer
@@ -173,7 +177,7 @@ The estimate (`models/pricing.py`) is a range, not a quote:
 - **Shipping is not included**; on BrickLink it often outweighs the parts on small orders.
 
 Rare colours are left out by default (`--palette buyable`): on sample pictures that
-barely changed the mosaic but cut its estimated price by about 10–50 %. Use `--palette all` to allow
+barely changed the mosaic but cut its estimated price by about 5–30 %. Use `--palette all` to allow
 them; any a build uses are then listed in the guide and the web app, as they make a
 mosaic much dearer and can be hard to find in bulk at all. All figures are rough market
 estimates (sources in the module), kept in plain tables so they are easy to update.
@@ -227,7 +231,8 @@ uv run ruff format .                # format
   finishes are excluded, since several sit exactly on top of a plain colour (e.g. the
   discontinued `Speckle Black-Copper` is pure `(0, 0, 0)`, same as `Black`) and would
   otherwise win ties against it. Pass `--full-palette` to also match against those finishes.
-- By default, matching then also leaves out the 20 rare colours (`--palette buyable`, 65
+- Colours with no 1x1 plate on BrickLink are left out of every `--palette`.
+- By default, matching then also leaves out the rare colours (`--palette buyable`, 45
   colours); see [Pricing](#pricing).
 - Brick ids in the guide are compact numbers (1 to N, for the N colours that guide uses);
   the guide's final table maps every id to its LEGO colour name, RGB and a swatch.

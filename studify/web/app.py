@@ -352,15 +352,17 @@ def _layout() -> dmc.MantineProvider:
         dmc.Group(
             [
                 dmc.Button("Télécharger le PDF", id="download-pdf", size="md", disabled=True),
-                dmc.Button("Liste BrickLink", id="download-bricklink", size="md", variant="light", disabled=True),
+                dmc.Button("Copier la liste BrickLink", id="copy-bricklink", size="md", variant="light", disabled=True),
+                dmc.Button("Télécharger la liste", id="download-bricklink", size="md", variant="subtle", disabled=True),
+                html.Div(id="copy-status"),
                 html.Div(id="pdf-status"),
             ],
             gap="md",
         ),
         dmc.Text(
             [
-                "La liste BrickLink contient les plaques choisies et le rab, sans les baseplates. Ouvre le fichier "
-                "dans un éditeur de texte, copie tout, puis colle-le sur la ",
+                "La liste BrickLink contient les plaques choisies et le rab, sans les baseplates. Copie-la, "
+                "puis colle-la sur la ",
                 dmc.Anchor("page d'import BrickLink", href=BRICKLINK_UPLOAD_URL, target="_blank", size="xs"),
                 ", option « Upload BrickLink XML format ».",
             ],
@@ -736,12 +738,13 @@ def create_app() -> Dash:
         Output({"type": "style-card", "index": ALL}, "className"),
         Output("download-pdf", "disabled"),
         Output("download-bricklink", "disabled"),
+        Output("copy-bricklink", "disabled"),
         Input("selected-style", "data"),
         State({"type": "style-card", "index": ALL}, "id"),
     )
     def highlight_selection(selected, card_ids):
         classes = ["style-card selected" if card["index"] == selected else "style-card" for card in card_ids]
-        return classes, selected is None, selected is None
+        return classes, selected is None, selected is None, selected is None
 
     @app.callback(
         Output("bricklink-file", "data"),
@@ -793,6 +796,26 @@ def create_app() -> Dash:
             size="sm",
         )
         return url, status
+
+    # The clipboard is only reachable from the browser, and the list is already there.
+    app.clientside_callback(
+        """
+        async function (clicks, builds, style) {
+            if (!clicks || !builds || !style) { return window.dash_clientside.no_update; }
+            try {
+                await navigator.clipboard.writeText(builds[style].wanted_list);
+                return "Liste copiée : colle-la sur BrickLink.";
+            } catch (error) {
+                return "Copie impossible ici : télécharge plutôt la liste.";
+            }
+        }
+        """,
+        Output("copy-status", "children"),
+        Input("copy-bricklink", "n_clicks"),
+        State("builds", "data"),
+        State("selected-style", "data"),
+        prevent_initial_call=True,
+    )
 
     # Start the download in the browser through a temporary link, so the page stays put.
     app.clientside_callback(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from studify.models.bricklink import unlisted_colors, wanted_list_xml
+from studify.models.bricklink import unavailable_parts, unlisted_colors, wanted_list_xml
 from studify.models.brickstore import BrickStore
 from studify.models.canvas import Canvas
 from studify.models.pdf_creator import PdfCreator
@@ -115,6 +115,8 @@ def process(
     ).generate_html(output_dir=output_dir, open_in_browser=open_in_browser)
     parts = canvas.get_part_counts(plates)
     print(f"Plates to place: {sum(parts.values())}")
+    if missing := unavailable_parts(parts):
+        print(f"Not sold in every size needed, per BrickLink: {', '.join(missing)}")
     print(f"Build guide: {guide}")
 
     if bricklink:

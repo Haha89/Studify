@@ -51,7 +51,7 @@ STYLES: dict[str, Style] = {
             "Orange",
             "Bright Green",
             "Medium Azure",
-            "Purple",
+            "Magenta",
             "Lime",
         ),
     ),

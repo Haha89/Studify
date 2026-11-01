@@ -6,8 +6,10 @@ Ideas not yet started, roughly in order of value. If the app is going online soo
 ## Prices from real data
 
 The estimate uses three broad price tiers, giving ranges too wide to plan a purchase
-around (e.g. 402–807 €). BrickLink's API could supply real prices per colour, which could
-also steer colour choices towards cheaper bricks. Needs a BrickLink API key.
+around (e.g. 363–704 €). BrickLink's API could supply real prices per colour, which could
+also steer colour choices towards cheaper bricks. On hold: an API key requires a BrickLink
+seller account. Prices could instead be updated by hand in `models/pricing.py`, from
+BrickLink's public price guide pages.
 
 ## Public hosting
 
@@ -25,6 +27,6 @@ default should change.
 
 ## Smaller items
 
-- BrickLink accepts our wanted lists, including one with every plain colour in all five
-  sizes. Accepting a line doesn't show a part exists in that colour, or that the colour
-  matches: compare the less certain ids by eye, notably `Light Pink` → Rose Pink (56).
+- BrickLink accepts our wanted lists, and `bricklink.PART_COLORS` holds its catalog's
+  colours for each plate, which change over time. Compare the less certain colour ids by
+  eye, notably `Light Pink` → Rose Pink (56). Check whether sellers stock enough of each.

@@ -3,9 +3,19 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections import Counter
 
-from studify.models.bricklink import BRICKLINK_COLOR_IDS, PLATE_1X1, unlisted_colors, wanted_list_xml
+from studify.models.bricklink import (
+    BRICKLINK_COLOR_IDS,
+    PART_COLORS,
+    PLATE_1X1,
+    PLATE_PARTS,
+    comes_in,
+    unavailable_parts,
+    unlisted_colors,
+    wanted_list_xml,
+)
 from studify.models.brickstore import BrickStore
 from studify.models.static import COLORS
+from studify.models.style import STYLES
 
 NAMES = list(COLORS)
 
@@ -49,6 +59,32 @@ def test_a_finish_without_an_id_is_left_out_and_reported():
     distribution = {chrome: 10, black: 20}
     assert unlisted_colors(distribution) == ["Chrome Gold"]
     assert items(wanted_list_xml(distribution)) == {11: 21}
+
+
+def test_availability_comes_from_the_catalog():
+    assert comes_in(NAMES.index("Black"), "3024")
+    assert not comes_in(NAMES.index("Purple"), "3024")  # Only 1x4 and 2x2 of our five.
+    assert comes_in(NAMES.index("Purple"), "3022")
+    assert not comes_in(NAMES.index("Chrome Gold"), "3024")  # No BrickLink id here.
+
+
+def test_unavailable_parts_names_the_colour():
+    purple, black = NAMES.index("Purple"), NAMES.index("Black")
+    assert unavailable_parts({(purple, "3024"): 1, (purple, "3022"): 1, (black, "3024"): 1}) == ["Purple"]
+
+
+def test_every_palette_colour_has_a_1x1():
+    for name in ("buyable", "all", "common"):
+        assert all(comes_in(brick.id, PLATE_1X1) for brick in BrickStore.palette(name))
+
+
+def test_every_style_palette_colour_has_a_1x1():
+    for style in STYLES.values():
+        assert all(comes_in(NAMES.index(name), PLATE_1X1) for name in style.colors or ())
+
+
+def test_every_catalog_colour_is_a_real_bricklink_id():
+    assert set(PART_COLORS) == set(PLATE_PARTS.values())
 
 
 def test_an_empty_build_is_still_valid_xml():

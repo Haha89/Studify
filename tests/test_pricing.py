@@ -90,7 +90,7 @@ class TestPalettes:
 
         assert pricing.DEFAULT_PALETTE == "buyable"
         buyable, everything = BrickStore.palette("buyable"), BrickStore.palette("all")
-        assert everything == BrickStore.available_bricks
+        assert set(everything) < set(BrickStore.available_bricks)  # Those with a 1x1 plate.
         assert {pricing.color_tier(b.id) for b in buyable} == {"common", "uncommon"}
         assert {b.id for b in everything} - {b.id for b in buyable} == {
             b.id for b in everything if pricing.color_tier(b.id) == "rare"
