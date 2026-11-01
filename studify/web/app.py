@@ -1,6 +1,6 @@
-"""LegoMe web app: pick a photo, compare the styles, download the PDF guide.
+"""Studify web app: pick a photo, compare the styles, download the PDF guide.
 
-Run it with ``uv run legome-web`` (needs ``uv sync --extra web``), then open
+Run it with ``uv run studify-web`` (needs ``uv sync --extra web``), then open
 http://127.0.0.1:8050.
 """
 
@@ -15,8 +15,9 @@ from dash import ALL, Dash, Input, Output, Patch, State, ctx, dcc, html, no_upda
 from dash.exceptions import PreventUpdate
 from flask import abort, send_file
 
-from legome.models.static import DIM_BASE
-from legome.web import service
+from studify.models.plates import ONLY_1X1, PLATE_SIZES
+from studify.models.static import DIM_BASE
+from studify.web import service
 
 SIZES = range(1, 7)  # Baseplates along the longest side.
 FRAMES = range(0, 5)  # Frame width in studs.
@@ -91,7 +92,7 @@ def _layout() -> dmc.MantineProvider:
     hero = dmc.Stack(
         [
             dmc.Group(
-                [dmc.Title("LegoMe", order=1, c="lego", fz=44), dmc.Badge("beta", variant="light", size="lg")],
+                [dmc.Title("Studify", order=1, c="lego", fz=44), dmc.Badge("beta", variant="light", size="lg")],
                 justify="center",
                 gap="sm",
             ),
@@ -263,6 +264,37 @@ def _layout() -> dmc.MantineProvider:
                     gap=6,
                     align="flex-start",
                 ),
+                dmc.Stack(
+                    [
+                        dmc.Switch(
+                            id="dither",
+                            label="Tramage",
+                            description="Mélange les couleurs pour simuler celles qui manquent. Plus lent à calculer.",
+                        ),
+                        dmc.CheckboxGroup(
+                            dmc.Group(
+                                [
+                                    dmc.Checkbox(label=size, value=size, disabled=size in ONLY_1X1)
+                                    for size in PLATE_SIZES
+                                ],
+                                mt="xs",
+                            ),
+                            id="plates",
+                            label="Tailles de plaques",
+                            description="Moins de pièces à poser avec les grandes plaques, dans le guide et la liste "
+                            "BrickLink. La 1x1 reste nécessaire pour les tenons isolés. "
+                            "Le prix reste calculé en plaques 1x1.",
+                            value=list(PLATE_SIZES),
+                        ),
+                        dmc.Switch(
+                            id="tinted",
+                            label="Cartes en couleur",
+                            description="Teinte chaque tenon dans le guide. Désactive-le pour économiser l'encre.",
+                            checked=True,
+                        ),
+                    ],
+                    gap="sm",
+                ),
                 dmc.Group(
                     [
                         dmc.Stack(
@@ -315,7 +347,7 @@ def _layout() -> dmc.MantineProvider:
     download = _step(
         4,
         "Télécharge le guide",
-        "Un PDF A4 : l'aperçu, puis une page par baseplate avec la carte des tenons et la liste des briques.",
+        "Un PDF A4 : l'aperçu, puis une page par baseplate avec la carte des tenons et la liste des plaques.",
         dmc.Group(
             [
                 dmc.Button("Télécharger le PDF", id="download-pdf", size="md", disabled=True),
@@ -325,7 +357,7 @@ def _layout() -> dmc.MantineProvider:
             gap="md",
         ),
         dmc.Text(
-            "La liste BrickLink se charge dans Want › Upload, onglet XML : plaques 1x1 et rab compris, "
+            "La liste BrickLink se charge dans Want › Upload, onglet XML : plaques choisies et rab compris, "
             "baseplates non comprises.",
             c="dimmed",
             size="xs",
@@ -349,6 +381,8 @@ def _layout() -> dmc.MantineProvider:
                 dcc.Store(id="settings"),  # The settings the current previews were made with.
                 dcc.Store(id="builds"),  # {style: {"distribution", "baseplates"}}, to reprice without refitting.
                 dcc.Store(id="selected-style"),
+                dcc.Store(id="previews"),  # {style: {"image", "label"}}, for the enlarged view.
+                dmc.Modal(html.Img(id="preview-image", className="preview-image"), id="preview-modal", size="auto"),
             ],
             size="lg",
             py=40,
@@ -369,6 +403,13 @@ def _style_card(result: dict[str, object]) -> html.Div:
         dmc.Card(
             [
                 dmc.CardSection(html.Img(src=result["image"], className="style-image")),
+                dmc.Button(
+                    "Agrandir",
+                    id={"type": "style-enlarge", "index": style},
+                    variant="subtle",
+                    size="compact-xs",
+                    mt="xs",
+                ),
                 dmc.Group(
                     [
                         dmc.Text(result["label"], fw=700, size="lg"),
@@ -378,7 +419,11 @@ def _style_card(result: dict[str, object]) -> html.Div:
                     mt="md",
                 ),
                 dmc.Text(f"{result['studs']} tenons · {result['baseplates']} baseplate(s)", c="dimmed", size="sm"),
-                dmc.Text(f"{bricks} briques", c="dimmed", size="sm"),
+                dmc.Text(
+                    f"{bricks} briques" + f", soit {result['plates']:,} plaques".replace(",", " "),
+                    c="dimmed",
+                    size="sm",
+                ),
                 dmc.Divider(my="sm"),
                 dmc.Group(
                     [
@@ -495,7 +540,7 @@ def next_crop_box(
 
 
 def create_app() -> Dash:
-    app = Dash(__name__, title="LegoMe")
+    app = Dash(__name__, title="Studify")
     app.layout = _layout()
 
     @app.callback(
@@ -581,6 +626,7 @@ def create_app() -> Dash:
         Output("settings", "data"),
         Output("selected-style", "data"),
         Output("builds", "data"),
+        Output("previews", "data"),
         Input("generate", "n_clicks"),
         Input("source", "data"),
         Input("crop", "data"),
@@ -590,12 +636,17 @@ def create_app() -> Dash:
         State("size", "value"),
         State("frame", "value"),
         State("max-colors", "value"),
+        State("dither", "checked"),
+        State("plates", "value"),
+        State("tinted", "checked"),
         running=[(Output("generate", "loading"), True, False)],
         prevent_initial_call=True,
     )
-    def generate_styles(_clicks, source, crop, palette, baseplates, currency, size, frame, max_colors):
+    def generate_styles(
+        _clicks, source, crop, palette, baseplates, currency, size, frame, max_colors, dither, plates, tinted
+    ):
         if not source:
-            return no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update
         settings = {
             "size": size,
             "frame": frame,
@@ -604,14 +655,40 @@ def create_app() -> Dash:
             "baseplates": baseplates,
             "currency": currency,
             "palette": palette,
+            "dither": bool(dither),
+            "plates": plates,
+            "tinted": bool(tinted),
         }
         try:
             results = service.render_styles(source["session"], **settings)
         except service.ImageError as exc:
-            return _error(str(exc)), None, None, None
+            return _error(str(exc)), None, None, None, None
         cards = dmc.SimpleGrid([_style_card(result) for result in results], cols={"base": 1, "sm": 3}, spacing="lg")
-        builds = {r["style"]: {"distribution": r["distribution"], "baseplates": r["baseplates"]} for r in results}
-        return cards, settings, None, builds
+        builds = {
+            r["style"]: {
+                "distribution": r["distribution"],
+                "baseplates": r["baseplates"],
+                "wanted_list": r["wanted_list"],
+            }
+            for r in results
+        }
+        previews = {r["style"]: {"image": r["image"], "label": r["label"]} for r in results}
+        return cards, settings, None, builds, previews
+
+    @app.callback(
+        Output("preview-modal", "opened"),
+        Output("preview-modal", "title"),
+        Output("preview-image", "src"),
+        Input({"type": "style-enlarge", "index": ALL}, "n_clicks"),
+        State("previews", "data"),
+        prevent_initial_call=True,
+    )
+    def enlarge_style(clicks, previews):
+        # Cards being (re)drawn also fires this, with no clicks: ignore that.
+        if not ctx.triggered_id or not any(clicks) or not previews:
+            raise PreventUpdate
+        preview = previews[ctx.triggered_id["index"]]
+        return True, preview["label"], preview["image"]
 
     @app.callback(
         Output({"type": "style-price", "index": ALL}, "children"),
@@ -672,7 +749,7 @@ def create_app() -> Dash:
     def download_bricklink(_clicks, source, builds, style):
         if not (source and builds and style):
             return no_update
-        return service.bricklink_download(source["name"], style, builds[style]["distribution"])
+        return service.bricklink_download(source["name"], style, builds[style]["wanted_list"])
 
     @app.server.route("/guide/<session_id>/<style>.pdf")
     def serve_pdf(session_id, style):
@@ -683,7 +760,7 @@ def create_app() -> Dash:
         except service.ImageError:
             abort(404)
         return send_file(
-            pdf, mimetype="application/pdf", as_attachment=True, download_name=f"legome-{pdf.stem}-{style}.pdf"
+            pdf, mimetype="application/pdf", as_attachment=True, download_name=f"studify-{pdf.stem}-{style}.pdf"
         )
 
     @app.callback(
@@ -735,7 +812,7 @@ def create_app() -> Dash:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="legome-web", description="Run the LegoMe web app.")
+    parser = argparse.ArgumentParser(prog="studify-web", description="Run the Studify web app.")
     parser.add_argument("--host", default="127.0.0.1", help="Interface to listen on (default: %(default)s).")
     parser.add_argument("--port", type=int, default=8050, help="Port to listen on (default: %(default)s).")
     parser.add_argument("--debug", action="store_true", help="Enable Dash hot reload and the debug panel.")

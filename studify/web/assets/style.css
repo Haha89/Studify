@@ -1,4 +1,4 @@
-/* LegoMe web app: the few things Mantine doesn't style. Dash serves every file
+/* Studify web app: the few things Mantine doesn't style. Dash serves every file
    in this folder automatically. */
 
 body {
@@ -48,8 +48,28 @@ body {
 }
 
 /* One pixel per brick: keep the edges crisp when scaled up. */
+.preview-image {
+    display: block;
+    image-rendering: pixelated;
+    max-height: 80vh;
+    max-width: 100%;
+}
+
 .style-image {
     display: block;
     image-rendering: pixelated;
     width: 100%;
+}
+
+#server-down {
+    background: #c8102e;
+    color: #fff;
+    font-weight: 600;
+    left: 0;
+    padding: 0.75rem 1rem;
+    position: fixed;
+    right: 0;
+    text-align: center;
+    top: 0;
+    z-index: 1000;
 }

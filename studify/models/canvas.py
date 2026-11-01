@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 import cv2
@@ -7,12 +8,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from legome.models.brick import Brick
-from legome.models.brickstore import BrickStore
-from legome.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
-from legome.models.static import COLORS, DIM_BASE
-from legome.models.style import Style, outline_mask, retouch
-from legome.models.utils import (
+from studify.models.brick import Brick
+from studify.models.brickstore import BrickStore
+from studify.models.plates import PLATE_SIZES, count_parts, pack_baseplates
+from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
+from studify.models.static import COLORS, DIM_BASE
+from studify.models.style import Style, outline_mask, retouch
+from studify.models.utils import (
     dither_indices,
     get_distribution,
     make_map,
@@ -81,6 +83,11 @@ class Canvas:
     def get_brick_ids(self) -> np.ndarray:
         """Return the canvas as a 2D array of brick ids."""
         return np.array([[brick.id for brick in row] for row in self.bricks], dtype=int)
+
+    def get_part_counts(self, sizes: Iterable[str] = PLATE_SIZES) -> dict[tuple[int, str], int]:
+        """Return the parts needed with these plate sizes, as {(brick id, BrickLink
+        part number): how many} (see ``plates.pack_plates``)."""
+        return count_parts(pack_baseplates(self.get_brick_ids(), sizes)) if self.bricks else {}
 
     @property
     def baseplate_count(self) -> int:

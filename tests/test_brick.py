@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from legome.models.brick import Brick
-from legome.models.brickstore import BrickStore
-from legome.models.static import COLORS
+from studify.models.brick import Brick
+from studify.models.brickstore import BrickStore
+from studify.models.static import COLORS
 
 
 def test_defaults():

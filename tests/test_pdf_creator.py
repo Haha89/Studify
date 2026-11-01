@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from legome.models import pdf_creator
-from legome.models.canvas import Canvas
-from legome.models.pdf_creator import ORIGINAL_MAX_DIMENSION, PdfCreator
-from legome.models.static import COLORS, DIM_BASE
+from studify.models import pdf_creator
+from studify.models.canvas import Canvas
+from studify.models.pdf_creator import ORIGINAL_MAX_DIMENSION, PdfCreator
+from studify.models.static import COLORS, DIM_BASE
 
 
 class TestGetBases:
@@ -60,7 +60,9 @@ class TestGenerateHtml:
 
     @pytest.fixture
     def html(self, two_base_canvas, tmp_path):
-        return PdfCreator(two_base_canvas).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
+        return (
+            PdfCreator(two_base_canvas, plates=["1x1"]).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
+        )
 
     def test_html_is_well_formed(self, html):
         assert html.lstrip().startswith("<!DOCTYPE html>")
@@ -68,7 +70,7 @@ class TestGenerateHtml:
         assert html.count("<table") == html.count("</table>")
 
     def test_html_titles_the_build(self, html):
-        assert "<title>LegoMe: two-base</title>" in html
+        assert "<title>Studify: two-base</title>" in html
 
     def test_html_has_a_section_per_baseplate(self, html):
         assert html.count('<section class="card baseplate">') == 2
@@ -95,13 +97,13 @@ class TestGenerateHtml:
 
     def test_does_not_open_a_browser_by_default(self, two_base_canvas, tmp_path, monkeypatch):
         opened = []
-        monkeypatch.setattr("legome.models.pdf_creator.webbrowser.open", lambda *a, **k: opened.append(a))
+        monkeypatch.setattr("studify.models.pdf_creator.webbrowser.open", lambda *a, **k: opened.append(a))
         PdfCreator(two_base_canvas).generate_html(output_dir=tmp_path)
         assert opened == []
 
     def test_opens_a_browser_when_asked(self, two_base_canvas, tmp_path, monkeypatch):
         opened = []
-        monkeypatch.setattr("legome.models.pdf_creator.webbrowser.open", lambda *a, **k: opened.append(a))
+        monkeypatch.setattr("studify.models.pdf_creator.webbrowser.open", lambda *a, **k: opened.append(a))
         PdfCreator(two_base_canvas).generate_html(output_dir=tmp_path, open_in_browser=True)
         assert len(opened) == 1
         assert opened[0][0].startswith("file://")
@@ -290,3 +292,19 @@ class TestHtmlToPdf:
         self._fake_browser(monkeypatch, writes_pdf=False)
         with pytest.raises(RuntimeError, match="PDF printing failed"):
             pdf_creator.html_to_pdf(guide, guide.with_suffix(".pdf"))
+
+
+class TestTintedMaps:
+    def test_each_stud_is_tinted_with_its_colour(self, two_base_canvas, tmp_path):
+        html = PdfCreator(two_base_canvas).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
+        rgb = COLORS[list(COLORS)[1]]  # Brick id 1 is the guide's colour 1.
+        assert f".stud-map td.c1 {{ background: rgb{rgb};" in html
+        assert '<td class="c1 ' in html
+
+    def test_can_be_turned_off(self, two_base_canvas, tmp_path):
+        html = PdfCreator(two_base_canvas, tinted=False).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
+        assert "background: rgb(" not in html.split("</head>")[0]
+
+    @pytest.mark.parametrize(("rgb", "text"), [((0, 0, 0), "#fff"), ((255, 255, 255), "#000"), ((5, 19, 29), "#fff")])
+    def test_numbers_stay_readable(self, rgb, text):
+        assert pdf_creator._text_color(rgb) == text

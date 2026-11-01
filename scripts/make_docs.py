@@ -16,9 +16,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from legome.models.pdf_creator import PdfCreator
-from legome.models.utils import read_image
-from legome.process import build_canvas
+from studify.models.pdf_creator import PdfCreator
+from studify.models.utils import read_image
+from studify.process import build_canvas
 
 SOURCE = Path("pics/dog.png")
 DOCS = Path("docs")

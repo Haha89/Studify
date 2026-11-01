@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import webbrowser
+from collections.abc import Iterable
 from pathlib import Path
 
 import cv2
@@ -14,10 +15,15 @@ import numpy as np
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 
-from legome.models.canvas import Canvas
-from legome.models.pricing import BASEPLATE_LABELS, SPARE_RATE, color_tier
-from legome.models.static import COLORS, DIM_BASE
-from legome.models.utils import fit_within, make_map, read_image
+from studify.export.labels import LABELS
+from studify.models.canvas import Canvas
+from studify.models.plates import ONLY_1X1, PLATE_SIZES, pack_plates, plate_regions, plate_sizes
+from studify.models.pricing import SPARE_RATE, color_tier
+from studify.models.static import COLORS, DIM_BASE
+from studify.models.utils import fit_within, make_map, read_image, rgb_to_lab
+
+# Lightness (CIELAB, 0-100) above which a tinted stud shows its number in black.
+DARK_TEXT_ABOVE_LIGHTNESS = 55
 
 # The original picture in the guide's overview only fills half an A4 page.
 ORIGINAL_MAX_DIMENSION = 1200
@@ -29,7 +35,7 @@ STYLESHEET = "style.css"
 
 # Environment variable naming a Chromium-based browser to print PDFs with,
 # overriding the search below.
-BROWSER_ENV = "LEGOME_BROWSER"
+BROWSER_ENV = "STUDIFY_BROWSER"
 _BROWSER_COMMANDS = ("google-chrome", "chromium", "chromium-browser", "chrome", "msedge", "microsoft-edge")
 # Install locations not on PATH, relative to Program Files / LocalAppData (Windows).
 _WINDOWS_BROWSERS = (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe")
@@ -67,7 +73,7 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> Path:
         raise RuntimeError(f"Printing a PDF needs Chrome, Chromium or Edge; none was found (or set {BROWSER_ENV}).")
     pdf_path = Path(pdf_path).resolve()
     # A throwaway profile, so a browser the user already has open isn't reused or locked.
-    with tempfile.TemporaryDirectory(prefix="legome-browser-") as profile:
+    with tempfile.TemporaryDirectory(prefix="studify-browser-") as profile:
         try:
             result = subprocess.run(
                 [
@@ -110,6 +116,11 @@ def _original_data_uri(path: Path) -> str | None:
     return f"data:image/jpeg;base64,{base64.b64encode(jpeg).decode('ascii')}"
 
 
+def _text_color(rgb: tuple[int, int, int]) -> str:
+    """The colour that stays readable on a stud of this colour: black or white."""
+    return "#000" if rgb_to_lab(np.array([rgb]))[0, 0] > DARK_TEXT_ABOVE_LIGHTNESS else "#fff"
+
+
 def data_uri_from_rgb_array(rgb: np.ndarray) -> str:
     """Encode an (rows, cols, 3) uint8 RGB array as a PNG ``data:`` URI."""
     ok, png = cv2.imencode(".png", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
@@ -121,12 +132,28 @@ def data_uri_from_rgb_array(rgb: np.ndarray) -> str:
 class PdfCreator:
     """Renders a canvas into a printable, per-baseplate build guide."""
 
-    def __init__(self, canvas: Canvas, baseplates: str = "official", currency: str = "EUR"):
+    def __init__(
+        self,
+        canvas: Canvas,
+        baseplates: str = "official",
+        currency: str = "EUR",
+        tinted: bool = True,
+        plates: Iterable[str] = PLATE_SIZES,
+        lang: str = "en",
+    ):
         """
         :param canvas: The fitted mosaic.
         :param baseplates: Price "official" LEGO or "compatible" baseplates.
         :param currency: "EUR" or "USD", for the price estimate.
+        :param tinted: Tint each stud in a stud map with its brick's colour, so a
+            builder can find a colour at a glance. Off saves ink.
+        :param plates: The plate sizes to lay the guide out with, from ``PLATE_SIZES``
+            (see ``plates.pack_plates``). Just 1x1 gives one plate per stud.
+        :param lang: Language of the guide, a ``LABELS`` key.
         """
+        self.tinted = tinted
+        self.plates = plate_sizes(plates)
+        self.labels = LABELS[lang]
         self.canvas = canvas
         self.baseplates = baseplates
         self.currency = currency
@@ -156,14 +183,25 @@ class PdfCreator:
         this guide's compact ids (see ``get_local_ids``)."""
         local_ids = self.get_local_ids()
         to_local = np.vectorize(local_ids.get)
+        columns = self.canvas.shape[1] // DIM_BASE
         bases = []
-        for c in self.get_bases():
+        for number, c in enumerate(self.get_bases()):
             distribution = {local_ids[brick_id]: count for brick_id, count in c.get_distribution().items()}
+            ids = c.get_brick_ids()
+            plates = pack_plates(ids, self.plates) if self.plates != ONLY_1X1 else None
+            sizes: dict[int, dict[str, int]] = {}
+            for plate in plates or []:
+                by_size = sizes.setdefault(local_ids[plate.brick_id], {})
+                by_size[plate.size] = by_size.get(plate.size, 0) + 1
+            row, col = divmod(number, columns)
             bases.append(
                 {
-                    "name": c.name,
-                    "table": make_map(pd.DataFrame(to_local(c.get_brick_ids()))),
+                    "name": self.labels["base"].format(source=self.canvas.source, row=row + 1, col=col + 1),
+                    "table": make_map(
+                        pd.DataFrame(to_local(ids)), plate_regions(ids.shape, plates) if plates else None
+                    ),
                     "distribution": dict(sorted(distribution.items())),
+                    "plates": {brick: dict(sorted(by_size.items(), reverse=True)) for brick, by_size in sizes.items()},
                 }
             )
         return bases
@@ -179,6 +217,7 @@ class PdfCreator:
                 "id": local_ids[brick_id],
                 "name": names[brick_id],
                 "rgb": COLORS[names[brick_id]],
+                "text": _text_color(COLORS[names[brick_id]]),
                 "count": count,
                 "tier": color_tier(brick_id),
             }
@@ -198,18 +237,25 @@ class PdfCreator:
         rows, cols = self.canvas.shape
         distribution = self.canvas.get_distribution()
         colors = self.get_used_colors()
+        price = self.canvas.get_price(self.baseplates, self.currency)
+        t = self.labels
         html_out = template.render(
-            title=f"LegoMe: {self.canvas.source}",
+            title=f"Studify: {self.canvas.source}",
             original_image=_original_data_uri(self.canvas.source_path) if self.canvas.source_path else None,
             mosaic_image=data_uri_from_rgb_array(self.canvas.to_preview_image()) if self.canvas.bricks else None,
-            mosaic_size=f"{cols} x {rows} studs",
+            mosaic_size=f"{cols} x {rows} {t['studs']}",
             total_colors=len(distribution),
             total_bricks=sum(distribution.values()),
-            price=self.canvas.get_price(self.baseplates, self.currency),
-            baseplate_label=BASEPLATE_LABELS[self.baseplates],
-            spare_percent=round(SPARE_RATE * 100),
+            total_plates=sum(self.canvas.get_part_counts(self.plates).values()) if self.plates != ONLY_1X1 else None,
+            price=price,
+            t=t,
+            spares_note=t["spares"].format(percent=round(SPARE_RATE * 100)),
+            baseplates_note=t["baseplates_note"].format(
+                count=price.baseplate_count, kind=t[self.baseplates], price=price.format(price.baseplates)
+            ),
             bases=self.get_bases_maps_and_repartition(),
             colors=colors,
+            tinted=self.tinted,
             color_by_id={color["id"]: color for color in colors},
         )
 

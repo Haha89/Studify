@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
-from legome.models.bricklink import unlisted_colors, wanted_list_xml
-from legome.models.brickstore import BrickStore
-from legome.models.canvas import Canvas
-from legome.models.pdf_creator import PdfCreator
-from legome.models.pricing import DEFAULT_PALETTE
-from legome.models.static import DIM_BASE
-from legome.models.style import STYLES
+from studify.models.bricklink import unlisted_colors, wanted_list_xml
+from studify.models.brickstore import BrickStore
+from studify.models.canvas import Canvas
+from studify.models.pdf_creator import PdfCreator
+from studify.models.plates import PLATE_SIZES
+from studify.models.pricing import DEFAULT_PALETTE
+from studify.models.static import DIM_BASE
+from studify.models.style import STYLES
 
 
 def build_canvas(
@@ -69,6 +71,9 @@ def process(
     baseplates: str = "official",
     currency: str = "EUR",
     bricklink: bool = False,
+    tinted: bool = True,
+    plates: Iterable[str] = PLATE_SIZES,
+    lang: str = "en",
     **options,
 ) -> Canvas:
     """
@@ -82,6 +87,9 @@ def process(
     :param baseplates: Price "official" LEGO or "compatible" baseplates.
     :param currency: "EUR" or "USD", for the price estimate.
     :param bricklink: Also write a BrickLink wanted list beside the guide.
+    :param tinted: Tint the guide's stud maps with each brick's colour.
+    :param plates: Plate sizes for the guide and the wanted list, from ``PLATE_SIZES``.
+    :param lang: Language of the guide: "en" or "fr".
     :param options: Mosaic options passed on to ``build_canvas`` (full_palette,
         frame, colors, max_colors, dither, style, palette, clean_strays).
     :return: The fitted canvas.
@@ -102,14 +110,16 @@ def process(
     if price.rare_colors:
         print(f"Rare colours, hard to buy in bulk: {', '.join(f'{n} x{c}' for n, c in price.rare_colors.items())}")
 
-    guide = PdfCreator(canvas, baseplates=baseplates, currency=currency).generate_html(
-        output_dir=output_dir, open_in_browser=open_in_browser
-    )
+    guide = PdfCreator(
+        canvas, baseplates=baseplates, currency=currency, tinted=tinted, plates=plates, lang=lang
+    ).generate_html(output_dir=output_dir, open_in_browser=open_in_browser)
+    parts = canvas.get_part_counts(plates)
+    print(f"Plates to place: {sum(parts.values())}")
     print(f"Build guide: {guide}")
 
     if bricklink:
         wanted_list = guide.with_name(f"{guide.stem}-bricklink.xml")
-        wanted_list.write_text(wanted_list_xml(distribution), encoding="utf-8")
+        wanted_list.write_text(wanted_list_xml(distribution, parts), encoding="utf-8")
         print(f"BrickLink wanted list: {wanted_list}")
         if unlisted := unlisted_colors(distribution):
             print(f"Not in the wanted list, add them by hand: {', '.join(unlisted)}")

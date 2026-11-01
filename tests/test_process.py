@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from legome.process import process
+from studify.process import process
 
 
 def test_returns_the_fitted_canvas(red_blue_image, tmp_path):
@@ -12,7 +12,7 @@ def test_returns_the_fitted_canvas(red_blue_image, tmp_path):
 
 def test_plots_only_when_asked(red_blue_image, tmp_path, monkeypatch):
     plotted = []
-    monkeypatch.setattr("legome.models.canvas.Canvas.plot", staticmethod(lambda pixels: plotted.append(pixels.shape)))
+    monkeypatch.setattr("studify.models.canvas.Canvas.plot", staticmethod(lambda pixels: plotted.append(pixels.shape)))
 
     process(1, red_blue_image, output_dir=tmp_path, plot=False, open_in_browser=False)
     assert plotted == []

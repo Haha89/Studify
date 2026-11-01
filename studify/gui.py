@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import customtkinter
 
-from legome.process import process
+from studify.process import process
 
 PAD_Y = (20, 10)
 
@@ -10,10 +10,10 @@ PAD_Y = (20, 10)
 def run_gui() -> None:
     """Open a small window asking for a size and an image, then build the guide."""
     root = customtkinter.CTk()
-    root.title("LegoMe")
+    root.title("Studify")
     root.geometry("520x320")
 
-    logo_label = customtkinter.CTkLabel(root, text="LegoMe", font=customtkinter.CTkFont(size=20, weight="bold"))
+    logo_label = customtkinter.CTkLabel(root, text="Studify", font=customtkinter.CTkFont(size=20, weight="bold"))
     logo_label.grid(row=0, column=0, columnspan=3, padx=20, pady=PAD_Y)
 
     customtkinter.CTkLabel(root, text="Size (baseplates)").grid(row=1, column=0, padx=20, pady=PAD_Y)

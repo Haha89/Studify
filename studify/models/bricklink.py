@@ -12,11 +12,12 @@ from collections import Counter
 from collections.abc import Mapping
 from math import ceil
 
-from legome.models.pricing import SPARE_RATE
-from legome.models.static import COLORS
+from studify.models.plates import PLATE_PARTS
+from studify.models.pricing import SPARE_RATE
+from studify.models.static import COLORS
 
-# Plate 1 x 1, the only part a mosaic uses.
-PLATE_1X1 = "3024"
+# Plate 1 x 1: what a mosaic is made of, unless it uses larger plates.
+PLATE_1X1 = PLATE_PARTS[1, 1]
 
 BRICKLINK_COLOR_IDS = {
     "Aqua": 41,
@@ -30,6 +31,7 @@ BRICKLINK_COLOR_IDS = {
     "Bright Pink": 104,
     "Brown": 8,
     "Copper": 84,
+    "Coral": 220,
     "Dark Azure": 153,
     "Dark Blue": 63,
     "Dark Blue-Violet": 109,  # BrickLink: Dark Royal Blue.
@@ -37,6 +39,7 @@ BRICKLINK_COLOR_IDS = {
     "Dark Flesh": 91,  # BrickLink: Light Brown.
     "Dark Gray": 10,
     "Dark Green": 80,
+    "Dark Nougat": 225,
     "Dark Orange": 68,
     "Dark Pink": 47,
     "Dark Purple": 89,
@@ -70,12 +73,14 @@ BRICKLINK_COLOR_IDS = {
     "Magenta": 71,
     "Medium Azure": 156,
     "Medium Blue": 42,
+    "Medium Brown": 240,
     "Medium Dark Flesh": 150,  # BrickLink: Medium Nougat.
     "Medium Dark Pink": 94,
     "Medium Green": 37,
     "Medium Lavender": 157,
     "Medium Lime": 76,
     "Medium Orange": 31,
+    "Medium Tan": 241,
     "Medium Violet": 73,
     "Olive Green": 155,
     "Orange": 4,
@@ -110,25 +115,29 @@ def unlisted_colors(distribution: Mapping[int, int]) -> list[str]:
     return [_NAMES[brick_id] for brick_id in distribution if _NAMES[brick_id] not in BRICKLINK_COLOR_IDS]
 
 
-def wanted_list_xml(distribution: Mapping[int, int]) -> str:
+def wanted_list_xml(distribution: Mapping[int, int], parts: Mapping[tuple[int, str], int] | None = None) -> str:
     """
     Write a build's bricks as BrickLink wanted-list XML, spares included. Baseplates
     are left out, and so are colours in ``unlisted_colors``.
 
     :param distribution: Bricks needed, as {brick id: count}.
+    :param parts: Larger plates to list instead of 1x1s, as {(brick id, BrickLink
+        part number): count}; see ``Canvas.get_part_counts``.
     """
+    if parts is None:
+        parts = {(brick_id, PLATE_1X1): count for brick_id, count in distribution.items()}
     # Two names can share a BrickLink colour.
     counts = Counter()
-    for brick_id, count in distribution.items():
+    for (brick_id, part), count in parts.items():
         color = BRICKLINK_COLOR_IDS.get(_NAMES[brick_id])
         if color is not None:
-            counts[color] += count
+            counts[part, color] += count
     items = "".join(
         "<ITEM><ITEMTYPE>P</ITEMTYPE>"
-        f"<ITEMID>{PLATE_1X1}</ITEMID>"
+        f"<ITEMID>{part}</ITEMID>"
         f"<COLOR>{color}</COLOR>"
         f"<MINQTY>{count + ceil(round(count * SPARE_RATE, 6))}</MINQTY>"
         "</ITEM>\n"
-        for color, count in sorted(counts.items())
+        for (part, color), count in sorted(counts.items())
     )
     return f"<INVENTORY>\n{items}</INVENTORY>\n"

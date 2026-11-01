@@ -3,15 +3,17 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from legome.models.brickstore import BrickStore
-from legome.models.static import DIM_BASE
-from legome.models.style import STYLES
-from legome.process import process
+from studify.export.labels import LABELS
+from studify.models.brickstore import BrickStore
+from studify.models.plates import PLATE_SIZES, plate_sizes
+from studify.models.static import DIM_BASE
+from studify.models.style import STYLES
+from studify.process import process
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="legome",
+        prog="studify",
         description="Turn an image into a LEGO mosaic build guide.",
     )
     parser.add_argument("image", type=Path, nargs="?", help="Path to the source image.")
@@ -74,6 +76,25 @@ def main(argv: list[str] | None = None) -> int:
         help="Keep isolated bricks instead of merging them into their surroundings.",
     )
     parser.add_argument(
+        "--plain-maps",
+        action="store_true",
+        help="Leave stud maps untinted, to save ink when printing the guide.",
+    )
+    parser.add_argument(
+        "--plates",
+        type=lambda value: value.split(","),
+        default=list(PLATE_SIZES),
+        metavar="SIZES",
+        help=f"Plate sizes to use, comma-separated, from {', '.join(PLATE_SIZES)} (default: all). "
+        "1x1 is always included; --plates 1x1 gives one plate per stud.",
+    )
+    parser.add_argument(
+        "--lang",
+        choices=list(LABELS),
+        default="en",
+        help="Language of the build guide (default: %(default)s).",
+    )
+    parser.add_argument(
         "--bricklink",
         action="store_true",
         help="Also write a BrickLink wanted list (XML) beside the guide.",
@@ -101,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.gui:
-        from legome.gui import run_gui
+        from studify.gui import run_gui
 
         run_gui()
         return 0
@@ -114,6 +135,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"--frame must be between 0 and {DIM_BASE // 2 - 1} studs")
     if args.max_colors is not None and args.max_colors < 1:
         parser.error("--max-colors must be at least 1")
+    try:
+        plate_sizes(args.plates)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.colors:
         try:
             BrickStore.bricks_named(args.colors)
@@ -137,6 +162,9 @@ def main(argv: list[str] | None = None) -> int:
             baseplates=args.baseplates,
             currency=args.currency,
             bricklink=args.bricklink,
+            tinted=not args.plain_maps,
+            plates=args.plates,
+            lang=args.lang,
             clean_strays=not args.keep_strays,
         )
     except FileNotFoundError as exc:

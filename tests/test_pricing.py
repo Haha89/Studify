@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from legome.models import pricing
-from legome.models.static import COLORS
+from studify.models import pricing
+from studify.models.static import COLORS
 
 NAMES = list(COLORS)
 
@@ -86,7 +86,7 @@ def test_rejects_unknown_options(kwargs, match):
 
 class TestPalettes:
     def test_buyable_is_the_default_and_drops_only_rare_colours(self):
-        from legome.models.brickstore import BrickStore
+        from studify.models.brickstore import BrickStore
 
         assert pricing.DEFAULT_PALETTE == "buyable"
         buyable, everything = BrickStore.palette("buyable"), BrickStore.palette("all")
@@ -97,19 +97,19 @@ class TestPalettes:
         }
 
     def test_common_palette(self):
-        from legome.models.brickstore import BrickStore
+        from studify.models.brickstore import BrickStore
 
         assert {pricing.color_tier(b.id) for b in BrickStore.palette("common")} == {"common"}
 
     def test_rejects_unknown_palettes(self):
-        from legome.models.brickstore import BrickStore
+        from studify.models.brickstore import BrickStore
 
         with pytest.raises(ValueError, match="palette"):
             BrickStore.palette("rainbow")
 
     def test_style_palettes_avoid_rare_colours(self):
         # A style's own palette overrides the palette choice, so it must be buyable too.
-        from legome.models.style import STYLES
+        from studify.models.style import STYLES
 
         for style in STYLES.values():
             for name in style.colors or ():

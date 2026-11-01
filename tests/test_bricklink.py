@@ -3,9 +3,9 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections import Counter
 
-from legome.models.bricklink import BRICKLINK_COLOR_IDS, PLATE_1X1, unlisted_colors, wanted_list_xml
-from legome.models.brickstore import BrickStore
-from legome.models.static import COLORS
+from studify.models.bricklink import BRICKLINK_COLOR_IDS, PLATE_1X1, unlisted_colors, wanted_list_xml
+from studify.models.brickstore import BrickStore
+from studify.models.static import COLORS
 
 NAMES = list(COLORS)
 

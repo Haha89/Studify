@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from legome.models.static import COLORS
+from studify.models.static import COLORS
 
 # Dollars per euro, fixed. Last updated 2026-10 (EUR/USD traded ~1.12-1.15).
 USD_PER_EUR = 1.13
@@ -91,7 +91,7 @@ RARE_COLORS = frozenset(
 
 # Which colour tiers each palette choice draws from. "buyable" is the default:
 # on sample pictures, dropping rare colours left the mosaic almost unchanged
-# but cut its price by 35-50 %; "common" alone visibly degrades skin tones.
+# but cut its estimated price by about 10-50 %; "common" alone visibly degrades skin tones.
 PALETTE_TIERS = {
     "buyable": ("common", "uncommon"),
     "all": ("common", "uncommon", "rare"),

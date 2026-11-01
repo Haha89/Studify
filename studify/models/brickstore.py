@@ -1,6 +1,6 @@
-from legome.models.brick import Brick
-from legome.models.pricing import PALETTE_TIERS, color_tier
-from legome.models.static import COLORS
+from studify.models.brick import Brick
+from studify.models.pricing import PALETTE_TIERS, color_tier
+from studify.models.static import COLORS
 
 # Name prefixes/entries that aren't ordinary, buildable LEGO colors: placeholders
 # ("Unknown", "[No Color]") and finishes nearest-colour matching shouldn't reach for

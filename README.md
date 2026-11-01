@@ -1,4 +1,4 @@
-# LegoMe
+# Studify
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
@@ -10,12 +10,12 @@
 
 Turn any image into a LEGO mosaic and a printable, baseplate-by-baseplate build guide.
 
-> **Unofficial fan project.** LegoMe is not affiliated with, sponsored, authorized or
+> **Unofficial fan project.** Studify is not affiliated with, sponsored, authorized or
 > endorsed by the LEGO Group. See the [disclaimer](#disclaimer).
 
-LegoMe downsamples your picture to whole 32x32 LEGO baseplates, snaps every pixel to the
+Studify downsamples your picture to whole 32x32 LEGO baseplates, snaps every pixel to the
 nearest real LEGO colour, and writes an HTML guide with one stud map per baseplate, the
-brick counts you need, and a cost estimate.
+plates you need, and a cost estimate. It can also write a BrickLink wanted list.
 
 ## Example
 
@@ -25,15 +25,15 @@ with a 2-stud black frame:
 | Original | Natural | Pop (`--style pop`) | Comic (`--style comic`) |
 | :---: | :---: | :---: | :---: |
 | <img src="docs/images/dog-original.png" width="200" alt="Original picture"> | <img src="docs/images/dog-natural.png" width="200" alt="Natural mosaic"> | <img src="docs/images/dog-pop.png" width="200" alt="Pop-art mosaic"> | <img src="docs/images/dog-comic.png" width="200" alt="Comic mosaic"> |
-| | 55 colours | 12 colours | 56 colours |
-| | 402–809 € | 291–512 € | 353–676 € |
+| | 58 colours | 12 colours | 58 colours |
+| | 402–807 € | 291–512 € | 353–677 € |
 
 Prices are estimates with official LEGO baseplates, shipping excluded (see
 [Pricing](#pricing)). The pop style's short palette makes it the cheapest to build.
 
 **Example build guide:** [`docs/example-guide-dog.pdf`](docs/example-guide-dog.pdf), the
-pop render at 2 x 2 baseplates. It opens with an overview, then has one A4 page per baseplate with
-its stud map and the bricks it needs, then the colour reference.
+pop render at 2 x 2 baseplates. It opens with an overview, then has one A4 page per
+baseplate with its stud map and the plates it needs, then the colour reference.
 
 Regenerate these with `uv run python scripts/make_docs.py`.
 
@@ -50,26 +50,26 @@ uv sync --all-extras     # also install the optional GUI and web app
 
 ```bash
 # A 4-baseplate-wide mosaic of the sample image
-uv run legome pics/dog.png --size 4
+uv run studify pics/dog.png --size 4
 
 # Write the guide elsewhere, and skip the preview window and the browser
-uv run legome pics/vador.png -s 2 -o ./guides --no-plot --no-open
+uv run studify pics/vador.png -s 2 -o ./guides --no-plot --no-open
 
 # A 2-stud black frame around the picture, for a finished, framed look
-uv run legome pics/alex.jpg -s 3 --frame 2
+uv run studify pics/alex.jpg -s 3 --frame 2
 
 # A punchy, 8-colour version: cheaper to buy, and more pop-art
-uv run legome pics/dog.png -s 3 --max-colors 8
+uv run studify pics/dog.png -s 3 --max-colors 8
 
 # Pop-art or comic-book retouching before the mosaic
-uv run legome pics/alex.jpg -s 3 --frame 2 --style pop
-uv run legome pics/dog.png -s 3 --frame 2 --style comic
+uv run studify pics/alex.jpg -s 3 --frame 2 --style pop
+uv run studify pics/dog.png -s 3 --frame 2 --style comic
 
 # Also write a BrickLink wanted list, to order the bricks in one go
-uv run legome pics/dog.png -s 3 --bricklink
+uv run studify pics/dog.png -s 3 --bricklink
 
 # Graphical interface (needs `uv sync --all-extras`)
-uv run legome --gui
+uv run studify --gui
 ```
 
 | Flag | Meaning |
@@ -87,6 +87,9 @@ uv run legome --gui
 | `--style` | Retouch the photo first: `natural` (default), `pop` (vivid, flat, short palette) or `comic` (black outlines). |
 | `--dither` | Blend colours the palette lacks with Floyd-Steinberg dithering. |
 | `--keep-strays` | Keep isolated bricks instead of merging them into their surroundings. |
+| `--plain-maps` | Leave stud maps untinted, to save ink when printing the guide. |
+| `--plates` | Plate sizes to use, comma-separated, from `1x1,1x2,1x3,1x4,2x2` (default: all). 1x1 is always included; `--plates 1x1` gives one plate per stud. |
+| `--lang` | Language of the guide: `en` (default) or `fr`. |
 | `--bricklink` | Also write a BrickLink wanted list, `<image-name>-bricklink.xml`, beside the guide. |
 | `--baseplates` | Price `official` LEGO baseplates (default) or cheaper `compatible` ones. |
 | `--currency` | Currency of the price estimate: `EUR` (default) or `USD`. |
@@ -99,36 +102,38 @@ stylesheet puts one baseplate on each page — or call `PdfCreator.generate_pdf`
 
 ```bash
 uv sync --extra web
-uv run legome-web        # then open http://127.0.0.1:8050
+uv run studify-web        # then open http://127.0.0.1:8050
 ```
 
 Upload a photo (or paste a link), crop it if you like, pick the size, frame, colour
-limit, baseplates and currency, compare the natural, pop and comic renders side by side
-with their prices, and download the chosen one as a PDF guide or a BrickLink wanted list.
-Uploads are stored at 2000 pixels at most on the longest side.
-PDFs are printed by a headless Chrome, Chromium or Edge; set `LEGOME_BROWSER` to point at
+limit, baseplates and currency, the plate sizes, and optionally dithering or uncoloured
+stud maps, compare the natural, pop and comic renders side by side with their prices, and
+download the chosen one as a PDF guide or a BrickLink wanted list. The app and its guides
+are in French. Uploads are stored at 2000 pixels at most on the longest side.
+PDFs are printed by a headless Chrome, Chromium or Edge; set `STUDIFY_BROWSER` to point at
 one if it isn't found automatically.
 
 ### As a library
 
 ```python
-from legome.models.canvas import Canvas
-from legome.models.pdf_creator import PdfCreator
+from studify.models.canvas import Canvas
+from studify.models.pdf_creator import PdfCreator
 
 canvas = Canvas(4)  # 4 baseplates on the longest side
 canvas.fit_from_image("pics/dog.png")
 
 print(canvas.shape)  # (rows, cols) in studs
 print(canvas.get_distribution())  # {brick_id: count}
-print(canvas.get_price().format())  # e.g. "129–228 €"
+print(canvas.get_price().format())  # e.g. "718–1 445 €"
 
 PdfCreator(canvas).generate_html(output_dir="output")  # or .generate_pdf(...)
 ```
 
 ## How it works
 
-1. **Resize** — the image is scaled so its longest side is `size * 32` studs, with both
-   sides rounded down to whole baseplates (`Canvas.resize_img`).
+1. **Resize** — the image is scaled so its longest side is `size * 32` studs. The short
+   side is padded with black up to a whole baseplate or, with a frame, the image is
+   centre-cropped to fill the area inside it (`Canvas.resize_img`).
 2. **Quantise** — each pixel is matched to the palette colour that *looks* closest
    (Euclidean distance in CIELAB, not raw RGB), optionally after narrowing the palette
    to the N colours that best fit the image, and optionally with Floyd-Steinberg
@@ -137,17 +142,23 @@ PdfCreator(canvas).generate_html(output_dir="output")  # or .generate_pdf(...)
    joins them, while real details like the glint in an eye stay (`utils.remove_stray_bricks`).
 4. **Split** — the mosaic is cut into 32x32 sub-canvases, one per baseplate, left to right
    and top to bottom (`PdfCreator.get_bases`).
-5. **Render** — each baseplate becomes an HTML table of brick ids, bordered around every
-   run of same-coloured bricks so you can see the shapes while building
-   (`utils.make_map`).
+5. **Cover** — each baseplate is covered with the largest chosen plates that fit, scanning
+   from the top left (`plates.pack_plates`).
+6. **Render** — each baseplate becomes an HTML table of colour numbers, tinted with each
+   stud's colour and outlining each plate (`utils.make_map`).
 
 ## Ordering on BrickLink
 
-`--bricklink` (or the web app's "Liste BrickLink" button) writes a wanted list of 1x1
-plates (part 3024), with 5 % spares. On BrickLink, go to Want > Upload, pick the XML tab
+`--bricklink` (or the web app's "Liste BrickLink" button) writes a wanted list of the
+plates a build uses, with 5 % spares, rounded up. On BrickLink, go to Want > Upload, pick the XML tab
 and paste the file's contents. Baseplates are not in the list. Speciality finishes from
 `--full-palette` aren't either; any a build uses are printed so you can add them by hand.
-Not every colour exists as a 1x1 plate, so check what BrickLink reports on upload.
+Not every colour exists in every size, so check what BrickLink reports on upload.
+
+By default the list and the guide use 1x1, 1x2, 1x3, 1x4 and 2x2 plates wherever a colour
+allows, each within its baseplate, and the stud maps outline each plate. Choose fewer
+with `--plates`; 1x1 always stays, as it is the only plate that fits a lone stud. The
+price estimate still assumes 1x1 plates, as it has no prices per size.
 
 ## Pricing
 
@@ -161,7 +172,7 @@ The estimate (`models/pricing.py`) is a range, not a quote:
 - **Shipping is not included**; on BrickLink it often outweighs the parts on small orders.
 
 Rare colours are left out by default (`--palette buyable`): on sample pictures that
-barely changed the mosaic but cut its price by 35–50 %. Use `--palette all` to allow
+barely changed the mosaic but cut its estimated price by about 10–50 %. Use `--palette all` to allow
 them; any a build uses are then listed in the guide and the web app, as they make a
 mosaic much dearer and can be hard to find in bulk at all. All figures are rough market
 estimates (sources in the module), kept in plain tables so they are easy to update.
@@ -169,57 +180,64 @@ estimates (sources in the module), kept in plain tables so they are easy to upda
 ## Layout
 
 ```
-legome/
-  cli.py              argparse entry point (`legome`)
+studify/
+  cli.py              argparse entry point (`studify`)
   process.py          image -> mosaic -> guide, one call
   gui.py              optional customtkinter front end
-  export/             Jinja2 template + print stylesheet
+  export/             Jinja2 template, print stylesheet and the guide's wording
   models/
     brick.py          immutable Brick (palette id + RGB)
     bricklink.py      BrickLink colour ids and wanted-list XML
-    brickstore.py     the orderable palette and its prices
+    brickstore.py     the orderable palette
     canvas.py         the brick grid: fitting, resizing, cost, plotting
+    plates.py         covers a mosaic with larger plates
     pdf_creator.py    splits a canvas into baseplates and renders the guide
     pricing.py        colour rarity and the price estimate
-    static.py         the 133 LEGO colours and DIM_BASE (32)
+    static.py         the 137 LEGO colours and DIM_BASE (32)
     style.py          the natural, pop and comic retouching
     utils.py          colour matching, cleanup, brick counting and stud-map HTML
   web/
-    app.py            Dash web app (`legome-web`)
+    app.py            Dash web app (`studify-web`)
     service.py        everything it does, minus the UI
 scripts/make_docs.py  regenerates the README's images and example guide
+.github/workflows/    lint and tests on each pull request
 tests/                pytest suite
 pics/                 sample images
 ```
+
+## Roadmap
+
+Ideas not yet started are logged in [`ROADMAP.md`](ROADMAP.md).
 
 ## Develop
 
 ```bash
 uv run pytest                       # tests
-uv run pytest --cov=legome          # tests with coverage
+uv run pytest --cov=studify         # tests with coverage
 uv run ruff check .                 # lint
 uv run ruff format .                # format
 ```
 
 ## Notes
 
-- The palette in `static.py` has 133 entries but only 122 distinct RGB values (for example
-  `Red` and `Trans-Red` are identical). `BrickStore.available_bricks` keeps the 81 plain,
+- The palette in `static.py` has 137 entries but only 126 distinct RGB values (for example
+  `Red` and `Trans-Red` are identical). `BrickStore.available_bricks` keeps the 85 plain,
   buildable colours — trans, chrome, speckle, glitter, pearl, metallic and glow-in-dark
   finishes are excluded, since several sit exactly on top of a plain colour (e.g. the
   discontinued `Speckle Black-Copper` is pure `(0, 0, 0)`, same as `Black`) and would
   otherwise win ties against it. Pass `--full-palette` to also match against those finishes.
-- By default, matching then also leaves out the 20 rare colours (`--palette buyable`, 61
+- By default, matching then also leaves out the 20 rare colours (`--palette buyable`, 65
   colours); see [Pricing](#pricing).
 - Brick ids in the guide are compact numbers (1 to N, for the N colours that guide uses);
   the guide's final table maps every id to its LEGO colour name, RGB and a swatch.
 - Colour data is cross-checked against the LDraw colour reference and BrickLink's colour
-  guide, but it isn't exhaustive: common colours like `Dark Royal Blue`, `Coral`, the
-  `Nougat` family and the `Neon`/`Satin Trans-` finishes aren't in the palette yet.
+  guide, but it isn't exhaustive, and it keeps some older names: `Flesh` is today's
+  `Nougat`, `Dark Blue-Violet` is `Dark Royal Blue`. `Neon` and `Satin Trans-` finishes
+  aren't in the palette yet.
 
 ## Disclaimer
 
-LegoMe is an independent, unofficial fan project. It is **not affiliated with,
+Studify is an independent, unofficial fan project. It is **not affiliated with,
 sponsored, authorized or endorsed by the LEGO Group**.
 
 LEGO® and the LEGO logo, the brick and knob configurations and the minifigure are
