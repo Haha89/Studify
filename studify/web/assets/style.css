@@ -61,6 +61,27 @@ body {
     width: 100%;
 }
 
+/* Round tiles have soft edges, which pixelated scaling would break up. */
+.preview-image.smooth,
+.style-image.smooth {
+    image-rendering: auto;
+}
+
+/* Unlike the previews, keep this one smooth when shrunk to fit: it has fine shading. */
+.realistic-image {
+    cursor: zoom-in;
+    display: block;
+    margin: 0 auto;
+    max-height: calc(100vh - 120px);
+    max-width: 100%;
+}
+
+.realistic-image.zoomed {
+    cursor: zoom-out;
+    max-height: none;
+    max-width: none;
+}
+
 #server-down {
     background: #c8102e;
     color: #fff;

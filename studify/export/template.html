@@ -21,7 +21,12 @@
         <div><dt>{{ t.size }}</dt><dd>{{ mosaic_size }}</dd></div>
         <div><dt>{{ t.baseplates }}</dt><dd>{{ bases | length }}</dd></div>
         <div><dt>{{ t.colors }}</dt><dd>{{ total_colors }}</dd></div>
+        {% if round_parts %}
+        <div><dt>{{ t.round_tiles }}</dt><dd>{{ round_parts.tiles }}</dd></div>
+        {% if round_parts.border %}<div><dt>{{ t.border_plates }}</dt><dd>{{ round_parts.border }}</dd></div>{% endif %}
+        {% else %}
         <div><dt>{{ t.bricks }}</dt><dd>{{ total_bricks }}</dd></div>
+        {% endif %}
         {% if total_plates %}<div><dt>{{ t.plates }}</dt><dd>{{ total_plates }}</dd></div>{% endif %}
         <div><dt>{{ t.cost }}</dt><dd>{{ price.format() }}</dd></div>
     </dl>
@@ -30,6 +35,7 @@
         ({{ spares_note | safe }}) &middot; {{ baseplates_note }}
         &middot; {{ t.no_shipping }}
         {% if total_plates %}<br>{{ t.plates_note }}{% endif %}
+        {% if round_tiles %}<br>{{ t.round_note }}{% endif %}
     </p>
     {% if price.rare_colors %}
     <p class="price-warning">
@@ -51,7 +57,7 @@
         {% endif %}
         {% if mosaic_image %}
         <figure>
-            <img src="{{ mosaic_image }}" alt="{{ t.mosaic_alt }}" class="pixelated">
+            <img src="{{ mosaic_image }}" alt="{{ t.mosaic_alt }}">
             <figcaption>{{ t.reconstructed }} &middot; {{ mosaic_size }}</figcaption>
         </figure>
         {% endif %}
@@ -65,7 +71,7 @@
     <div class="baseplate-layout">
         <div class="stud-map-wrap">{{ base.table | safe }}</div>
         <div class="brick-list-wrap">
-            <h3>{{ t.plates_needed if base.plates else t.needed }}</h3>
+            <h3>{{ t.pieces_needed if round_tiles else (t.plates_needed if base.plates else t.needed) }}</h3>
             <ul class="brick-list">
                 {% for brick_id, count in base.distribution.items() %}
                 {% set color = color_by_id[brick_id] %}

@@ -16,8 +16,9 @@ import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 
 from studify.export.labels import LABELS
+from studify.models.bricklink import ROUND_TILE
 from studify.models.canvas import Canvas
-from studify.models.plates import ONLY_1X1, PLATE_SIZES, pack_plates, plate_regions, plate_sizes
+from studify.models.plates import BORDER_SIZES, ONLY_1X1, PLATE_SIZES, pack_plates, plate_regions, plate_sizes
 from studify.models.pricing import SPARE_RATE, color_tier
 from studify.models.static import COLORS, DIM_BASE
 from studify.models.utils import fit_within, make_map, read_image, rgb_to_lab
@@ -140,6 +141,7 @@ class PdfCreator:
         tinted: bool = True,
         plates: Iterable[str] = PLATE_SIZES,
         lang: str = "en",
+        round_tiles: bool = False,
     ):
         """
         :param canvas: The fitted mosaic.
@@ -150,9 +152,12 @@ class PdfCreator:
         :param plates: The plate sizes to lay the guide out with, from ``PLATE_SIZES``
             (see ``plates.pack_plates``). Just 1x1 gives one plate per stud.
         :param lang: Language of the guide, a ``LABELS`` key.
+        :param round_tiles: The picture is built from round 1x1 tiles, one per stud, and
+            its border from plates up to 1x4, so ``plates`` doesn't apply.
         """
         self.tinted = tinted
-        self.plates = plate_sizes(plates)
+        self.round_tiles = round_tiles
+        self.plates = ONLY_1X1 if round_tiles else plate_sizes(plates)
         self.labels = LABELS[lang]
         self.canvas = canvas
         self.baseplates = baseplates
@@ -184,16 +189,23 @@ class PdfCreator:
         local_ids = self.get_local_ids()
         to_local = np.vectorize(local_ids.get)
         columns = self.canvas.shape[1] // DIM_BASE
+        border = self.canvas.border_mask()
         bases = []
         for number, c in enumerate(self.get_bases()):
             distribution = {local_ids[brick_id]: count for brick_id, count in c.get_distribution().items()}
             ids = c.get_brick_ids()
-            plates = pack_plates(ids, self.plates) if self.plates != ONLY_1X1 else None
+            row, col = divmod(number, columns)
             sizes: dict[int, dict[str, int]] = {}
+            if self.round_tiles:
+                on_border = border[row * DIM_BASE : (row + 1) * DIM_BASE, col * DIM_BASE : (col + 1) * DIM_BASE]
+                plates = pack_plates(ids, BORDER_SIZES, on_border)
+                for brick_id, count in zip(*np.unique(ids[~on_border], return_counts=True), strict=True):
+                    sizes.setdefault(local_ids[int(brick_id)], {})[self.labels["round_size"]] = int(count)
+            else:
+                plates = pack_plates(ids, self.plates) if self.plates != ONLY_1X1 else None
             for plate in plates or []:
                 by_size = sizes.setdefault(local_ids[plate.brick_id], {})
                 by_size[plate.size] = by_size.get(plate.size, 0) + 1
-            row, col = divmod(number, columns)
             bases.append(
                 {
                     "name": self.labels["base"].format(source=self.canvas.source, row=row + 1, col=col + 1),
@@ -224,6 +236,12 @@ class PdfCreator:
             for brick_id, count in sorted(self.canvas.get_distribution().items())
         ]
 
+    def _round_part_totals(self) -> dict[str, int]:
+        """Return how many round tiles and border plates the mosaic takes."""
+        parts = self.canvas.get_round_part_counts()
+        tiles = sum(count for (_, part), count in parts.items() if part == ROUND_TILE)
+        return {"tiles": tiles, "border": sum(parts.values()) - tiles}
+
     def generate_html(self, output_dir: Path | str | None = None, open_in_browser: bool = False) -> Path:
         """
         Write the build guide to ``<output_dir>/<source>.html``.
@@ -242,7 +260,13 @@ class PdfCreator:
         html_out = template.render(
             title=f"Studify: {self.canvas.source}",
             original_image=_original_data_uri(self.canvas.source_path) if self.canvas.source_path else None,
-            mosaic_image=data_uri_from_rgb_array(self.canvas.to_preview_image()) if self.canvas.bricks else None,
+            mosaic_image=(
+                data_uri_from_rgb_array(self.canvas.to_realistic_image(self.plates, self.round_tiles))
+                if self.canvas.bricks
+                else None
+            ),
+            round_tiles=self.round_tiles,
+            round_parts=self._round_part_totals() if self.round_tiles else None,
             mosaic_size=f"{cols} x {rows} {t['studs']}",
             total_colors=len(distribution),
             total_bricks=sum(distribution.values()),

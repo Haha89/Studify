@@ -3,9 +3,16 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from studify.models.bricklink import unavailable_parts, unlisted_colors, wanted_list_xml
+from studify.models.bricklink import (
+    PLATE_1X1,
+    ROUND_TILE,
+    comes_in,
+    unavailable_parts,
+    unlisted_colors,
+    wanted_list_xml,
+)
 from studify.models.brickstore import BrickStore
-from studify.models.canvas import Canvas
+from studify.models.canvas import DEFAULT_FRAME_COLOR, Canvas
 from studify.models.pdf_creator import PdfCreator
 from studify.models.plates import PLATE_SIZES
 from studify.models.pricing import DEFAULT_PALETTE
@@ -24,6 +31,8 @@ def build_canvas(
     style: str = "natural",
     palette: str = DEFAULT_PALETTE,
     clean_strays: bool = True,
+    round_tiles: bool = False,
+    frame_color: str = DEFAULT_FRAME_COLOR,
 ) -> Canvas:
     """
     Turn an image into a fitted LEGO mosaic, without writing anything.
@@ -32,7 +41,8 @@ def build_canvas(
     :param path: Path to the source image.
     :param full_palette: Also match trans/chrome/speckle/pearl/metallic finishes,
         instead of just plain buildable colours.
-    :param frame: Width, in studs, of a black frame around the mosaic. 0 for none.
+    :param frame: Width, in studs, of a frame around the mosaic. 0 for none.
+    :param frame_color: Colour of that frame: "black" or "white".
     :param colors: Only use these LEGO colour names (e.g. the ones you already
         own). Overrides ``full_palette``.
     :param max_colors: Use at most this many colours, chosen to best fit the image.
@@ -44,18 +54,21 @@ def build_canvas(
         ``pricing.PALETTE_TIERS``). Ignored when ``colors``, ``full_palette`` or
         the style's own palette applies.
     :param clean_strays: Merge isolated bricks into their surroundings.
+    :param round_tiles: Build from round 1x1 tiles, so only draw from the colours they
+        come in. Colours given by hand in ``colors`` are still used as they are.
     :return: The fitted canvas.
     """
-    canvas = Canvas(size, frame=frame)
+    canvas = Canvas(size, frame=frame, frame_color=frame_color)
     preset = STYLES[style]
-    if colors is None and not full_palette and preset.colors:
-        colors = list(preset.colors)
     if colors:
         bricks = BrickStore.bricks_named(colors)
     elif full_palette:
         bricks = BrickStore.all_bricks
+    elif preset.colors:
+        part = ROUND_TILE if round_tiles else PLATE_1X1
+        bricks = [brick for brick in BrickStore.bricks_named(list(preset.colors)) if comes_in(brick.id, part)]
     else:
-        bricks = BrickStore.palette(palette)
+        bricks = BrickStore.palette(palette, ROUND_TILE if round_tiles else PLATE_1X1)
     canvas.fit_from_image(
         path, palette=bricks, max_colors=max_colors, dither=dither, style=preset, clean_strays=clean_strays
     )
@@ -74,6 +87,7 @@ def process(
     tinted: bool = True,
     plates: Iterable[str] = PLATE_SIZES,
     lang: str = "en",
+    round_tiles: bool = False,
     **options,
 ) -> Canvas:
     """
@@ -90,11 +104,13 @@ def process(
     :param tinted: Tint the guide's stud maps with each brick's colour.
     :param plates: Plate sizes for the guide and the wanted list, from ``PLATE_SIZES``.
     :param lang: Language of the guide: "en" or "fr".
+    :param round_tiles: Build the picture from round 1x1 tiles, one per stud, and its
+        border from plates up to 1x4, instead of ``plates``.
     :param options: Mosaic options passed on to ``build_canvas`` (full_palette,
-        frame, colors, max_colors, dither, style, palette, clean_strays).
+        frame, frame_color, colors, max_colors, dither, style, palette, clean_strays).
     :return: The fitted canvas.
     """
-    canvas = build_canvas(size, path, **options)
+    canvas = build_canvas(size, path, round_tiles=round_tiles, **options)
 
     rows, cols = canvas.shape
     distribution = canvas.get_distribution()
@@ -111,10 +127,16 @@ def process(
         print(f"Rare colours, hard to buy in bulk: {', '.join(f'{n} x{c}' for n, c in price.rare_colors.items())}")
 
     guide = PdfCreator(
-        canvas, baseplates=baseplates, currency=currency, tinted=tinted, plates=plates, lang=lang
+        canvas,
+        baseplates=baseplates,
+        currency=currency,
+        tinted=tinted,
+        plates=plates,
+        lang=lang,
+        round_tiles=round_tiles,
     ).generate_html(output_dir=output_dir, open_in_browser=open_in_browser)
-    parts = canvas.get_part_counts(plates)
-    print(f"Plates to place: {sum(parts.values())}")
+    parts = canvas.get_round_part_counts() if round_tiles else canvas.get_part_counts(plates)
+    print(f"{'Pieces' if round_tiles else 'Plates'} to place: {sum(parts.values())}")
     if missing := unavailable_parts(parts):
         print(f"Not sold in every size needed, per BrickLink: {', '.join(missing)}")
     print(f"Build guide: {guide}")

@@ -9,9 +9,11 @@ import numpy as np
 import pandas as pd
 
 from studify.models.brick import Brick
+from studify.models.bricklink import round_tile_parts
 from studify.models.brickstore import BrickStore
-from studify.models.plates import PLATE_SIZES, count_parts, pack_baseplates
+from studify.models.plates import BORDER_SIZES, PLATE_SIZES, Plate, count_parts, pack_baseplates, plate_regions
 from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
+from studify.models.realistic import render_round, render_tiles
 from studify.models.static import COLORS, DIM_BASE
 from studify.models.style import Style, outline_mask, retouch
 from studify.models.utils import (
@@ -27,9 +29,11 @@ from studify.models.utils import (
 
 # Colour used to pad a resized image out to whole baseplates (see resize_img).
 LETTERBOX_COLOR = (0, 0, 0)
-# Colour of the optional frame around the mosaic: exactly LEGO Black, so it
-# survives quantisation unchanged.
-FRAME_COLOR = COLORS["Black"]
+# Colours of the optional frame around the mosaic: exact LEGO colours, so they
+# survive quantisation unchanged.
+FRAME_COLORS = {"black": COLORS["Black"], "white": COLORS["White"]}
+DEFAULT_FRAME_COLOR = "black"
+OUTLINE_COLOR = COLORS["Black"]
 # Cap on a preview image's longer side, so a very large mosaic doesn't embed an
 # equally large PNG in the build guide.
 PREVIEW_MAX_DIMENSION = 1200
@@ -44,13 +48,18 @@ class Canvas:
         bricks: list[list[Brick]] | None = None,
         name: str | None = None,
         frame: int = 0,
+        frame_color: str = DEFAULT_FRAME_COLOR,
     ):
         """
         :param bases: Number of baseplates along the longest side of the canvas.
         :param bricks: Pre-built brick grid, row-major. Defaults to an empty canvas.
         :param name: Human-readable label, used as a heading in the build guide.
-        :param frame: Width, in studs, of a black frame around the mosaic. 0 for none.
+        :param frame: Width, in studs, of a frame around the mosaic. 0 for none.
+        :param frame_color: Colour of that frame, a ``FRAME_COLORS`` key.
         """
+        if frame_color not in FRAME_COLORS:
+            raise ValueError(f"Unknown frame colour {frame_color!r}; expected one of {list(FRAME_COLORS)}")
+        self.frame_color = FRAME_COLORS[frame_color]
         if bases < 1:
             raise ValueError(f"bases must be at least 1, got {bases}")
         if not 0 <= frame < DIM_BASE // 2:
@@ -89,6 +98,27 @@ class Canvas:
         part number): how many} (see ``plates.pack_plates``)."""
         return count_parts(pack_baseplates(self.get_brick_ids(), sizes)) if self.bricks else {}
 
+    def border_mask(self) -> np.ndarray:
+        """Return a boolean grid of the studs around the picture: its frame and any
+        letterbox bars. A canvas not fitted from an image has none."""
+        if self.content_box is None:
+            return np.zeros(self.shape, dtype=bool)
+        top, bottom, left, right = self.content_box
+        mask = np.ones(self.shape, dtype=bool)
+        mask[top:bottom, left:right] = False
+        return mask
+
+    def border_plates(self) -> list[Plate]:
+        """Return the plates covering the border of a mosaic made of round tiles."""
+        return pack_baseplates(self.get_brick_ids(), BORDER_SIZES, self.border_mask())
+
+    def get_round_part_counts(self) -> dict[tuple[int, str], int]:
+        """Return the parts of a mosaic made of round tiles, with plates around the
+        picture, as {(brick id, BrickLink part number): how many}."""
+        tiles = np.unique(self.get_brick_ids()[~self.border_mask()], return_counts=True)
+        distribution = dict(zip(tiles[0].tolist(), tiles[1].tolist(), strict=True))
+        return round_tile_parts(distribution) | count_parts(self.border_plates())
+
     @property
     def baseplate_count(self) -> int:
         """Number of 32x32 baseplates the canvas covers (a partial one counts whole)."""
@@ -107,14 +137,20 @@ class Canvas:
             raise ValueError("Canvas is empty; call fit_from_image() first")
         return np.array([[brick.color for brick in row] for row in self.bricks], dtype=np.uint8)
 
-    def to_preview_image(self) -> np.ndarray:
+    def to_preview_image(self, round_tiles: bool = False) -> np.ndarray:
         """Return the mosaic as an (rows x scale, cols x scale, 3) uint8 RGB array,
         scaled up and ruled with a line at every baseplate boundary, for a build
-        guide's "reconstructed" preview."""
+        guide's "reconstructed" preview.
+
+        :param round_tiles: Draw a round tile per stud, rather than a flat square.
+        """
         pixels = self.to_pixel_array()
         rows, cols = pixels.shape[:2]
         scale = max(1, PREVIEW_MAX_DIMENSION // max(rows, cols))
-        preview = cv2.resize(pixels, (cols * scale, rows * scale), interpolation=cv2.INTER_NEAREST)
+        if round_tiles:
+            preview = render_round(pixels, scale, plate_regions(self.shape, self.border_plates()))
+        else:
+            preview = cv2.resize(pixels, (cols * scale, rows * scale), interpolation=cv2.INTER_NEAREST)
 
         line_px = max(1, scale // 4)
         for y in range(0, rows + 1, DIM_BASE):
@@ -124,6 +160,19 @@ class Canvas:
             x_px = min(x * scale, preview.shape[1] - 1)
             preview[:, max(0, x_px - line_px // 2) : x_px + line_px - line_px // 2] = LETTERBOX_COLOR
         return preview
+
+    def to_realistic_image(self, sizes: Iterable[str] = PLATE_SIZES, round_tiles: bool = False) -> np.ndarray:
+        """Return the mosaic drawn as it looks built, for a build guide's overview:
+        with its shading and the outline of each piece, no larger than a preview.
+
+        :param sizes: The plates it is built from. Drawn as flat tiles (see ``realistic``).
+        :param round_tiles: It is built from round tiles and border plates instead.
+        """
+        pixels = self.to_pixel_array()
+        scale = max(1, PREVIEW_MAX_DIMENSION // max(pixels.shape[:2]))
+        if round_tiles:
+            return render_round(pixels, scale, plate_regions(self.shape, self.border_plates()))
+        return render_tiles(pixels, plate_regions(self.shape, pack_baseplates(self.get_brick_ids(), sizes)), scale)
 
     def plot_canvas(self) -> None:
         """Show the canvas as an image, one pixel per brick."""
@@ -195,7 +244,7 @@ class Canvas:
 
         inner = cv2.resize(src, (inner_width, inner_height), interpolation=cv2.INTER_AREA)
         self.content_box = (self.frame, self.frame + inner_height, self.frame, self.frame + inner_width)
-        return cv2.copyMakeBorder(inner, *[self.frame] * 4, cv2.BORDER_CONSTANT, value=FRAME_COLOR)
+        return cv2.copyMakeBorder(inner, *[self.frame] * 4, cv2.BORDER_CONSTANT, value=self.frame_color)
 
     @staticmethod
     def _letterbox(img: np.ndarray) -> np.ndarray:
@@ -258,9 +307,9 @@ class Canvas:
 
         palette = palette if palette is not None else self.store.palette(DEFAULT_PALETTE)
         if max_colors is not None:
-            # A frame or outline must stay black, however few colours are allowed.
-            needs_black = self.frame or outlined
-            keep = tuple(i for i, brick in enumerate(palette) if needs_black and brick.color == FRAME_COLOR)
+            # A frame or outline must keep its colour, however few colours are allowed.
+            needed = ([self.frame_color] if self.frame else []) + ([OUTLINE_COLOR] if outlined else [])
+            keep = tuple(i for i, brick in enumerate(palette) if brick.color in needed)
             kept = reduce_palette(resized, np.array([brick.color for brick in palette]), max_colors, keep)
             palette = [palette[i] for i in kept]
         colors = np.array([brick.color for brick in palette])

@@ -6,7 +6,7 @@ import pytest
 
 from studify.models.brick import Brick
 from studify.models.brickstore import BrickStore
-from studify.models.canvas import FRAME_COLOR, Canvas
+from studify.models.canvas import FRAME_COLORS, Canvas
 from studify.models.static import COLORS, DIM_BASE
 
 
@@ -144,8 +144,13 @@ class TestFrame:
         height, width = resized.shape[:2]
         assert height % DIM_BASE == 0 and width % DIM_BASE == 0
         assert max(height, width) == 2 * DIM_BASE
-        assert np.all(resized[:2] == FRAME_COLOR) and np.all(resized[-2:] == FRAME_COLOR)
-        assert np.all(resized[:, :2] == FRAME_COLOR) and np.all(resized[:, -2:] == FRAME_COLOR)
+        white = Canvas(1, frame=2, frame_color="white")._resize_framed(np.zeros((64, 64, 3), dtype=np.uint8))
+        assert np.all(white[:2] == FRAME_COLORS["white"])
+        with pytest.raises(ValueError):
+            Canvas(1, frame_color="pink")
+        black = FRAME_COLORS["black"]
+        assert np.all(resized[:2] == black) and np.all(resized[-2:] == black)
+        assert np.all(resized[:, :2] == black) and np.all(resized[:, -2:] == black)
         assert np.all(resized[2:-2, 2:-2] == 255)  # image fills the inside, no letterbox bars
 
     def test_image_is_centre_cropped_to_fit_inside_the_frame(self):

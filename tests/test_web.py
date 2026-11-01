@@ -281,6 +281,61 @@ def test_pdf_route_serves_built_guides_only(png_bytes, monkeypatch):
     assert client.get(f"/guide/{session}/baroque.pdf").status_code == 404
 
 
+def test_realistic_route_draws_the_latest_render(png_bytes):
+    from studify.web.app import create_app
+
+    session = service.save_source(png_bytes, "flag.png")
+    client = create_app().server.test_client()
+    assert client.get(f"/realistic/{session}/pop.png").status_code == 404  # never rendered
+
+    service.render_styles(session, size=1, frame=0, max_colors=None)
+    response = client.get(f"/realistic/{session}/pop.png")
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    drawn = cv2.imdecode(np.frombuffer(response.data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert drawn.shape[1] == 32 * 40
+
+    service.render_styles(session, size=2, frame=0, max_colors=None)
+    redrawn = cv2.imdecode(
+        np.frombuffer(client.get(f"/realistic/{session}/pop.png").data, dtype=np.uint8), cv2.IMREAD_COLOR
+    )
+    assert redrawn.shape[1] == 64 * 37
+
+    assert client.get(f"/realistic/{'0' * 32}/pop.png").status_code == 404  # unknown session
+    assert client.get(f"/realistic/{session}/baroque.png").status_code == 404
+
+
+def test_round_tiles_change_the_parts_and_the_drawing(png_bytes):
+    session = service.save_source(png_bytes, "flag.png")
+    flat = service.render_styles(session, size=1, frame=0, max_colors=None)[0]
+    flat_png = service.realistic_png(session, flat["style"])
+    tiles = service.render_styles(session, size=1, frame=0, max_colors=None, round_tiles=True)[0]
+    assert "98138" in tiles["wanted_list"] and "98138" not in flat["wanted_list"]
+    assert tiles["bricks"] == 32 * 32
+    assert tiles["image"] != flat["image"]
+    assert service.realistic_png(session, tiles["style"]) != flat_png
+
+
+def test_a_round_build_frames_its_tiles_with_1x4_plates(png_bytes):
+    session = service.save_source(png_bytes, "flag.png")
+    result = service.render_styles(session, size=1, frame=2, max_colors=None, round_tiles=True)[0]
+    # A 2-stud frame on one baseplate divides by 4 on every side, so needs only 1x4s.
+    assert result["round_tile_count"] == 28 * 28
+    assert result["plates"] - result["round_tile_count"] == (32 * 32 - 28 * 28) // 4
+    assert "<ITEMID>3710</ITEMID>" in result["wanted_list"] and "<ITEMID>3024</ITEMID>" not in result["wanted_list"]
+
+
+def test_round_tiles_reach_the_guide(png_bytes, monkeypatch):
+    session = service.save_source(png_bytes, "flag.png")
+    monkeypatch.setattr(pdf_creator, "html_to_pdf", lambda html, pdf: html)
+    html = service.build_pdf(session, size=1, frame=2, max_colors=None, style="natural", round_tiles=True)
+    text = html.read_text(encoding="utf-8")
+    assert "98138" in text
+    assert "ronde 1x1" in text and "1x4" in text and "Plaques de bordure" in text
+    assert text.count('colspan="4"') + text.count('rowspan="4"') == (32 * 32 - 28 * 28) // 4
+    assert 'class="pixelated"' not in text
+
+
 class TestCrop:
     def test_validate_crop_clamps_and_orders(self):
         assert service.validate_crop([0.8, -0.2, 0.2, 0.5]) == (0.2, 0.0, 0.8, 0.5)

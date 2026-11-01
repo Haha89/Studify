@@ -25,6 +25,8 @@ PLATE_PARTS = {
 }
 # Plate 1 x 1: what a mosaic is made of, unless it uses larger plates.
 PLATE_1X1 = PLATE_PARTS[1, 1]
+# Tile, Round 1 x 1: the other way to build a mosaic, one per stud.
+ROUND_TILE = "98138"
 
 BRICKLINK_COLOR_IDS = {
     "Aqua": 41,
@@ -137,6 +139,11 @@ PART_COLORS = {
         (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 24, 29, 33, 34, 36, 39, 42, 47, 48, 55, 59, 63, 68, 69, 71, 72, 85, 86)
         + (88, 89, 93, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 241)
     ),
+    # Checked November 2026.
+    ROUND_TILE: frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 11, 28, 34, 36, 39, 42, 47, 55, 59, 63, 68, 69, 71, 80, 85, 86, 88, 89, 90, 95)
+        + (103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220)
+    ),
 }
 
 _NAMES = list(COLORS)
@@ -145,6 +152,11 @@ _NAMES = list(COLORS)
 def comes_in(brick_id: int, part: str) -> bool:
     """Whether BrickLink knows this plate in this palette colour."""
     return BRICKLINK_COLOR_IDS.get(_NAMES[brick_id]) in PART_COLORS[part]
+
+
+def round_tile_parts(distribution: Mapping[int, int]) -> dict[tuple[int, str], int]:
+    """Return the parts of a build made of round tiles, as {(brick id, part): count}."""
+    return {(brick_id, ROUND_TILE): count for brick_id, count in distribution.items()}
 
 
 def unavailable_parts(parts: Mapping[tuple[int, str], int]) -> list[str]:

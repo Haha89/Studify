@@ -21,6 +21,9 @@ from studify.models.static import DIM_BASE
 # Every size, as written in the guide and on the command line. All are used by default.
 PLATE_SIZES = tuple(f"{short}x{long}" for short, long in PLATE_PARTS)
 ONLY_1X1 = ("1x1",)
+# What covers the border of a mosaic made of round tiles: 1x4s, and shorter plates
+# wherever a side's length doesn't divide by 4.
+BORDER_SIZES = ("1x1", "1x2", "1x3", "1x4")
 
 
 def plate_sizes(names: Iterable[str]) -> tuple[str, ...]:
@@ -61,7 +64,7 @@ class Plate:
         return PLATE_PARTS[min(self.height, self.width), max(self.height, self.width)]
 
 
-def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES) -> list[Plate]:
+def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.ndarray | None = None) -> list[Plate]:
     """
     Cover a grid of brick ids with plates, greedily: scanning from the top left,
     each uncovered stud starts the largest plate of one colour that fits there and
@@ -70,11 +73,12 @@ def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES) -> list[Pl
 
     :param grid: (rows, cols) array of brick ids, usually one baseplate.
     :param sizes: Which plates to use, from ``PLATE_SIZES``.
-    :return: Plates covering every stud exactly once.
+    :param only: Boolean grid of the studs to cover. Defaults to all of them.
+    :return: Plates covering each of those studs exactly once.
     """
     rows, cols = grid.shape
     shapes = _shapes(sizes)
-    covered = np.zeros(grid.shape, dtype=bool)
+    covered = np.zeros(grid.shape, dtype=bool) if only is None else ~only
     plates = []
     for row in range(rows):
         for col in range(cols):
@@ -97,21 +101,28 @@ def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES) -> list[Pl
     return plates
 
 
-def pack_baseplates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES) -> list[Plate]:
+def pack_baseplates(
+    grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.ndarray | None = None
+) -> list[Plate]:
     """Pack a whole mosaic baseplate by baseplate, with rows and columns given
-    relative to the whole mosaic."""
+    relative to the whole mosaic. See ``pack_plates`` for ``only``."""
     rows, cols = grid.shape
     return [
         Plate(row + plate.row, col + plate.col, plate.height, plate.width, plate.brick_id)
         for row in range(0, rows, DIM_BASE)
         for col in range(0, cols, DIM_BASE)
-        for plate in pack_plates(grid[row : row + DIM_BASE, col : col + DIM_BASE], sizes)
+        for plate in pack_plates(
+            grid[row : row + DIM_BASE, col : col + DIM_BASE],
+            sizes,
+            None if only is None else only[row : row + DIM_BASE, col : col + DIM_BASE],
+        )
     ]
 
 
 def plate_regions(shape: tuple[int, int], plates: list[Plate]) -> np.ndarray:
-    """Return a grid numbering each stud by its plate, for outlining the plates."""
-    regions = np.zeros(shape, dtype=int)
+    """Return a grid numbering each stud by its plate, for outlining the plates. A stud
+    no plate covers gets a negative number of its own."""
+    regions = -1 - np.arange(shape[0] * shape[1]).reshape(shape)
     for number, plate in enumerate(plates):
         regions[plate.row : plate.row + plate.height, plate.col : plate.col + plate.width] = number
     return regions

@@ -149,13 +149,6 @@ figcaption {
     text-align: center;
 }
 
-/* The reconstructed mosaic is one pixel per brick: keep its edges crisp when the
-   browser scales it up, instead of blurring it into a smooth photo. */
-.pixelated {
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-}
-
 /* ---------- Stud maps ---------- */
 
 /* The stud map is a fixed width (it must stay sharp and square); the brick list

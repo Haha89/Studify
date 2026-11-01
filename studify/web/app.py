@@ -13,7 +13,7 @@ import dash_mantine_components as dmc
 import plotly.graph_objects as go
 from dash import ALL, Dash, Input, Output, Patch, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
-from flask import abort, send_file
+from flask import Response, abort, send_file
 
 from studify.models.plates import ONLY_1X1, PLATE_SIZES
 from studify.models.static import DIM_BASE
@@ -21,6 +21,7 @@ from studify.web import service
 
 SIZES = range(1, 7)  # Baseplates along the longest side.
 FRAMES = range(0, 5)  # Frame width in studs.
+FRAME_COLOR_CHOICES = [("Noir", "black"), ("Blanc", "white")]
 COLOR_LIMITS = [("Toutes", "0"), ("16", "16"), ("12", "12"), ("8", "8"), ("6", "6")]
 BASEPLATE_CHOICES = [("Officielles LEGO", "official"), ("Compatibles", "compatible")]
 CURRENCY_CHOICES = [("€", "EUR"), ("$", "USD")]
@@ -213,7 +214,7 @@ def _layout() -> dmc.MantineProvider:
                 ),
                 dmc.Stack(
                     [
-                        dmc.Text("Cadre noir autour de l'image", fw=600, size="sm"),
+                        dmc.Text("Cadre autour de l'image", fw=600, size="sm"),
                         dmc.Slider(
                             id="frame",
                             min=FRAMES[0],
@@ -223,6 +224,13 @@ def _layout() -> dmc.MantineProvider:
                             marks=[{"value": n, "label": "aucun" if n == 0 else f"{n} tenon(s)"} for n in FRAMES],
                             restrictToMarks=True,
                             mb="md",
+                        ),
+                        dmc.SegmentedControl(
+                            id="frame-color",
+                            data=[{"label": label, "value": value} for label, value in FRAME_COLOR_CHOICES],
+                            value="black",
+                            radius="xl",
+                            style={"alignSelf": "flex-start"},
                         ),
                     ],
                     gap=6,
@@ -286,6 +294,13 @@ def _layout() -> dmc.MantineProvider:
                             "BrickLink. La 1x1 reste nécessaire pour les tenons isolés. "
                             "Le prix reste calculé en plaques 1x1.",
                             value=list(PLATE_SIZES),
+                        ),
+                        dmc.Switch(
+                            id="round-tiles",
+                            label="Tuiles rondes",
+                            description="Une tuile ronde 1x1 par tenon pour l'image, façon LEGO Art, et des plaques "
+                            "jusqu'à 1x4 pour la bordure. Plus de pièces à poser. Prix estimé comme des plaques 1x1. "
+                            "La baseplate se voit entre les tuiles : choisis-la sombre.",
                         ),
                         dmc.Switch(
                             id="tinted",
@@ -361,7 +376,7 @@ def _layout() -> dmc.MantineProvider:
         ),
         dmc.Text(
             [
-                "La liste BrickLink contient les plaques choisies et le rab, sans les baseplates. Copie-la, "
+                "La liste BrickLink contient les pièces choisies et le rab, sans les baseplates. Copie-la, "
                 "puis colle-la sur la ",
                 dmc.Anchor("page d'import BrickLink", href=BRICKLINK_UPLOAD_URL, target="_blank", size="xs"),
                 ", option « Upload BrickLink XML format ».",
@@ -390,6 +405,19 @@ def _layout() -> dmc.MantineProvider:
                 dcc.Store(id="selected-style"),
                 dcc.Store(id="previews"),  # {style: {"image", "label"}}, for the enlarged view.
                 dmc.Modal(html.Img(id="preview-image", className="preview-image"), id="preview-modal", size="auto"),
+                dmc.Modal(
+                    [
+                        dmc.Text(
+                            id="realistic-note",
+                            c="dimmed",
+                            size="xs",
+                            mb="sm",
+                        ),
+                        html.Img(id="realistic-image", className="realistic-image", n_clicks=0),
+                    ],
+                    id="realistic-modal",
+                    fullScreen=True,
+                ),
             ],
             size="lg",
             py=40,
@@ -403,18 +431,41 @@ def _price_detail(prices: dict[str, object]) -> str:
     return f"Briques {prices['price_bricks']} (+5 % de rab) · baseplates {prices['price_baseplates']}"
 
 
+def _round_pieces(result: dict[str, object]) -> str:
+    tiles = result["round_tile_count"]
+    border = result["plates"] - tiles
+    text = f"{tiles:,} tuiles rondes" + (f" + {border:,} plaques de bordure" if border else "")
+    return text.replace(",", " ")
+
+
 def _style_card(result: dict[str, object]) -> html.Div:
     bricks = f"{result['bricks']:,}".replace(",", " ")
     style = result["style"]
     return html.Div(
         dmc.Card(
             [
-                dmc.CardSection(html.Img(src=result["image"], className="style-image")),
-                dmc.Button(
-                    "Agrandir",
-                    id={"type": "style-enlarge", "index": style},
-                    variant="subtle",
-                    size="compact-xs",
+                dmc.CardSection(
+                    html.Img(
+                        src=result["image"],
+                        className="style-image smooth" if result["round_tiles"] else "style-image",
+                    )
+                ),
+                dmc.Group(
+                    [
+                        dmc.Button(
+                            "Agrandir",
+                            id={"type": "style-enlarge", "index": style},
+                            variant="subtle",
+                            size="compact-xs",
+                        ),
+                        dmc.Button(
+                            "Rendu réaliste",
+                            id={"type": "style-realistic", "index": style},
+                            variant="subtle",
+                            size="compact-xs",
+                        ),
+                    ],
+                    gap="xs",
                     mt="xs",
                 ),
                 dmc.Group(
@@ -427,7 +478,9 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 ),
                 dmc.Text(f"{result['studs']} tenons · {result['baseplates']} baseplate(s)", c="dimmed", size="sm"),
                 dmc.Text(
-                    f"{bricks} briques" + f", soit {result['plates']:,} plaques".replace(",", " "),
+                    _round_pieces(result)
+                    if result["round_tiles"]
+                    else f"{bricks} briques" + f", soit {result['plates']:,} plaques".replace(",", " "),
                     c="dimmed",
                     size="sm",
                 ),
@@ -646,17 +699,33 @@ def create_app() -> Dash:
         State("dither", "checked"),
         State("plates", "value"),
         State("tinted", "checked"),
+        State("round-tiles", "checked"),
+        State("frame-color", "value"),
         running=[(Output("generate", "loading"), True, False)],
         prevent_initial_call=True,
     )
     def generate_styles(
-        _clicks, source, crop, palette, baseplates, currency, size, frame, max_colors, dither, plates, tinted
+        _clicks,
+        source,
+        crop,
+        palette,
+        baseplates,
+        currency,
+        size,
+        frame,
+        max_colors,
+        dither,
+        plates,
+        tinted,
+        round_tiles,
+        frame_color,
     ):
         if not source:
             return no_update, no_update, no_update, no_update, no_update
         settings = {
             "size": size,
             "frame": frame,
+            "frame_color": frame_color,
             "max_colors": int(max_colors) or None,
             "crop": crop,
             "baseplates": baseplates,
@@ -665,6 +734,7 @@ def create_app() -> Dash:
             "dither": bool(dither),
             "plates": plates,
             "tinted": bool(tinted),
+            "round_tiles": bool(round_tiles),
         }
         try:
             results = service.render_styles(source["session"], **settings)
@@ -679,13 +749,16 @@ def create_app() -> Dash:
             }
             for r in results
         }
-        previews = {r["style"]: {"image": r["image"], "label": r["label"]} for r in results}
+        previews = {
+            r["style"]: {"image": r["image"], "label": r["label"], "round_tiles": r["round_tiles"]} for r in results
+        }
         return cards, settings, None, builds, previews
 
     @app.callback(
         Output("preview-modal", "opened"),
         Output("preview-modal", "title"),
         Output("preview-image", "src"),
+        Output("preview-image", "className"),
         Input({"type": "style-enlarge", "index": ALL}, "n_clicks"),
         State("previews", "data"),
         prevent_initial_call=True,
@@ -695,7 +768,53 @@ def create_app() -> Dash:
         if not ctx.triggered_id or not any(clicks) or not previews:
             raise PreventUpdate
         preview = previews[ctx.triggered_id["index"]]
-        return True, preview["label"], preview["image"]
+        image_class = "preview-image smooth" if preview["round_tiles"] else "preview-image"
+        return True, preview["label"], preview["image"], image_class
+
+    @app.server.route("/realistic/<session_id>/<style>.png")
+    def serve_realistic(session_id, style):
+        # Over plain HTTP, like the PDF: a large mosaic makes a heavy image, drawn
+        # only if asked for, which shouldn't sit in the page as base64.
+        try:
+            return Response(service.realistic_png(session_id, style), mimetype="image/png")
+        except service.ImageError:
+            abort(404)
+
+    @app.callback(
+        Output("realistic-modal", "opened"),
+        Output("realistic-modal", "title"),
+        Output("realistic-image", "src"),
+        Output("realistic-note", "children"),
+        Input({"type": "style-realistic", "index": ALL}, "n_clicks"),
+        State("source", "data"),
+        State("settings", "data"),
+        prevent_initial_call=True,
+    )
+    def show_realistic(clicks, source, settings):
+        # Cards being (re)drawn also fires this, with no clicks: ignore that.
+        if not ctx.triggered_id or not any(clicks) or not source:
+            raise PreventUpdate
+        style = ctx.triggered_id["index"]
+        # The timestamp stops the browser reusing the image of an earlier render.
+        url = f"/realistic/{source['session']}/{style}.png?v={time.time_ns()}"
+        note = (
+            "Une tuile ronde par tenon, sur une baseplate sombre."
+            if (settings or {}).get("round_tiles")
+            else "Aperçu en tuiles lisses : le guide et la liste BrickLink restent en plaques à tenons."
+        )
+        return True, f"{service.STYLE_LABELS[style]} : rendu réaliste", url, f"{note} Clique sur l'image pour zoomer."
+
+    # Zoom in the browser: nothing about it concerns the server.
+    app.clientside_callback(
+        """
+        function (clicks) {
+            return clicks % 2 ? "realistic-image zoomed" : "realistic-image";
+        }
+        """,
+        Output("realistic-image", "className"),
+        Input("realistic-image", "n_clicks"),
+        prevent_initial_call=True,
+    )
 
     @app.callback(
         Output({"type": "style-price", "index": ALL}, "children"),

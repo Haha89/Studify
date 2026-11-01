@@ -8,7 +8,9 @@ from studify.models.bricklink import (
     PART_COLORS,
     PLATE_1X1,
     PLATE_PARTS,
+    ROUND_TILE,
     comes_in,
+    round_tile_parts,
     unavailable_parts,
     unlisted_colors,
     wanted_list_xml,
@@ -84,7 +86,20 @@ def test_every_style_palette_colour_has_a_1x1():
 
 
 def test_every_catalog_colour_is_a_real_bricklink_id():
-    assert set(PART_COLORS) == set(PLATE_PARTS.values())
+    assert set(PART_COLORS) == {*PLATE_PARTS.values(), ROUND_TILE}
+
+
+def test_round_palettes_only_hold_colours_the_tile_comes_in():
+    assert not comes_in(NAMES.index("Sand Green"), ROUND_TILE)
+    for name in ("buyable", "all", "common"):
+        palette = BrickStore.palette(name, ROUND_TILE)
+        assert palette and all(comes_in(brick.id, ROUND_TILE) for brick in palette)
+
+
+def test_round_tiles_reach_the_wanted_list():
+    black = NAMES.index("Black")
+    xml = wanted_list_xml({black: 20}, round_tile_parts({black: 20}))
+    assert "<ITEMID>98138</ITEMID>" in xml and "<MINQTY>21</MINQTY>" in xml
 
 
 def test_an_empty_build_is_still_valid_xml():

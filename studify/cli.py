@@ -89,6 +89,12 @@ def main(argv: list[str] | None = None) -> int:
         "1x1 is always included; --plates 1x1 gives one plate per stud.",
     )
     parser.add_argument(
+        "--round-tiles",
+        action="store_true",
+        help="Build the picture from round 1x1 tiles, one per stud, in the colours they come in, "
+        "and its border from plates up to 1x4. Overrides --plates.",
+    )
+    parser.add_argument(
         "--lang",
         choices=list(LABELS),
         default="en",
@@ -104,7 +110,13 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=0,
         metavar="STUDS",
-        help="Add a black frame this many studs wide around the mosaic (default: no frame).",
+        help="Add a frame this many studs wide around the mosaic (default: no frame).",
+    )
+    parser.add_argument(
+        "--frame-color",
+        choices=["black", "white"],
+        default="black",
+        help="Colour of the frame (default: %(default)s).",
     )
     parser.add_argument(
         "--baseplates",
@@ -154,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             open_in_browser=not args.no_open,
             full_palette=args.full_palette,
             frame=args.frame,
+            frame_color=args.frame_color,
             colors=args.colors,
             max_colors=args.max_colors,
             dither=args.dither,
@@ -164,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             bricklink=args.bricklink,
             tinted=not args.plain_maps,
             plates=args.plates,
+            round_tiles=args.round_tiles,
             lang=args.lang,
             clean_strays=not args.keep_strays,
         )

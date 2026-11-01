@@ -97,10 +97,28 @@ def generate(
     palette="buyable",
     dither=False,
     plates=("1x1", "1x2", "1x3", "1x4", "2x2"),
+    round_tiles=False,
+    frame=0,
+    frame_color="black",
 ):
     return fire(
         "generate_styles",
-        [1, source, crop, palette, baseplates, currency, 1, 0, max_colors, dither, plates, True],
+        [
+            1,
+            source,
+            crop,
+            palette,
+            baseplates,
+            currency,
+            1,
+            frame,
+            max_colors,
+            dither,
+            plates,
+            True,
+            round_tiles,
+            frame_color,
+        ],
         "generate.n_clicks",
     )
 
@@ -246,6 +264,47 @@ class TestEnlarge:
     def test_redrawn_cards_open_nothing(self, fire, source):
         previews = generate(fire, source)["previews"]["data"]
         assert fire("enlarge_style", [[0, 0, 0], previews], wildcard("style-enlarge", "pop") + ".n_clicks") is None
+
+
+class TestRealistic:
+    def test_shows_the_clicked_style(self, fire, source):
+        out = fire("show_realistic", [[0, 1, 0], source, None], wildcard("style-realistic", "pop") + ".n_clicks")
+        assert out["realistic-modal"]["opened"] is True
+        assert "Pop art" in out["realistic-modal"]["title"]
+        assert out["realistic-image"]["src"].startswith(f"/realistic/{source['session']}/pop.png?v=")
+        assert "plaques à tenons" in out["realistic-note"]["children"]
+
+    def test_says_when_the_build_really_is_round_tiles(self, fire, source):
+        settings = generate(fire, source, round_tiles=True)["settings"]["data"]
+        assert settings["round_tiles"] is True
+        out = fire("show_realistic", [[0, 1, 0], source, settings], wildcard("style-realistic", "pop") + ".n_clicks")
+        assert "tuile ronde" in out["realistic-note"]["children"]
+
+    def test_redrawn_cards_open_nothing(self, fire, source):
+        trigger = wildcard("style-realistic", "pop") + ".n_clicks"
+        assert fire("show_realistic", [[0, 0, 0], source, None], trigger) is None
+
+
+class TestFrameColor:
+    def test_a_white_frame_reaches_the_wanted_list(self, fire, source):
+        white = generate(fire, source, round_tiles=True, frame=2, frame_color="white")
+        assert white["settings"]["data"]["frame_color"] == "white"
+        wanted_list = white["builds"]["data"]["natural"]["wanted_list"]
+        # White is BrickLink colour 1: 60 x 1x4 for this frame, plus 5 % spares.
+        assert "<ITEMID>3710</ITEMID><COLOR>1</COLOR><MINQTY>63</MINQTY>" in wanted_list
+
+
+class TestRoundTiles:
+    def test_the_whole_build_uses_round_tiles(self, fire, source):
+        out = generate(fire, source, round_tiles=True)
+        wanted_list = out["builds"]["data"]["natural"]["wanted_list"]
+        assert "<ITEMID>98138</ITEMID>" in wanted_list and "<ITEMID>3024</ITEMID>" not in wanted_list
+        assert "tuiles rondes" in str(out["styles"]["children"])
+
+    def test_the_enlarged_view_stays_smooth(self, fire, source):
+        previews = generate(fire, source, round_tiles=True)["previews"]["data"]
+        out = fire("enlarge_style", [[0, 1, 0], previews], wildcard("style-enlarge", "pop") + ".n_clicks")
+        assert out["preview-image"]["className"] == "preview-image smooth"
 
 
 class TestOptions:
