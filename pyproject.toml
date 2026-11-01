@@ -14,9 +14,11 @@ dependencies = [
 
 [project.optional-dependencies]
 gui = ["customtkinter>=5.2"]
+depth = ["onnxruntime>=1.18"]
 web = [
     "dash>=2.17",
     "dash-mantine-components>=1.0",
+    "onnxruntime>=1.18",
 ]
 
 [project.scripts]

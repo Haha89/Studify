@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import webbrowser
+from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -16,10 +17,11 @@ import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 
 from studify.export.labels import LABELS
-from studify.models.bricklink import ROUND_TILE
+from studify.models.assembly import LARGEST_OFFICIAL_STUDS, assembly_parts, panel_grid, pin_joins
 from studify.models.canvas import Canvas
-from studify.models.plates import BORDER_SIZES, ONLY_1X1, PLATE_SIZES, pack_plates, plate_regions, plate_sizes
+from studify.models.plates import ONLY_1X1, PLATE_SIZES, Plate, plate_regions, plate_sizes
 from studify.models.pricing import SPARE_RATE, color_tier
+from studify.models.relief import Layout
 from studify.models.static import COLORS, DIM_BASE
 from studify.models.utils import fit_within, make_map, read_image, rgb_to_lab
 
@@ -45,6 +47,8 @@ _MAC_BROWSERS = (
     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 )
 PDF_TIMEOUT_SECONDS = 180
+# How a hidden plate's studs are marked on a support map: not a colour's number.
+SUPPORT_CELL = -1
 
 
 def find_browser() -> str | None:
@@ -130,6 +134,22 @@ def data_uri_from_rgb_array(rgb: np.ndarray) -> str:
     return f"data:image/png;base64,{base64.b64encode(png).decode('ascii')}"
 
 
+def _plates_on_base(plates: list[Plate], row: int, col: int) -> list[Plate]:
+    """Return the plates on one baseplate, with rows and columns relative to it."""
+    return [
+        Plate(
+            plate.row - row * DIM_BASE,
+            plate.col - col * DIM_BASE,
+            plate.height,
+            plate.width,
+            plate.brick_id,
+            plate.tile,
+        )
+        for plate in plates
+        if plate.row // DIM_BASE == row and plate.col // DIM_BASE == col
+    ]
+
+
 class PdfCreator:
     """Renders a canvas into a printable, per-baseplate build guide."""
 
@@ -157,7 +177,7 @@ class PdfCreator:
         """
         self.tinted = tinted
         self.round_tiles = round_tiles
-        self.plates = ONLY_1X1 if round_tiles else plate_sizes(plates)
+        self.plates = ONLY_1X1 if self.round_tiles else plate_sizes(plates)
         self.labels = LABELS[lang]
         self.canvas = canvas
         self.baseplates = baseplates
@@ -188,27 +208,29 @@ class PdfCreator:
         this guide's compact ids (see ``get_local_ids``)."""
         local_ids = self.get_local_ids()
         to_local = np.vectorize(local_ids.get)
+        if not self.canvas.bricks:
+            return []
         columns = self.canvas.shape[1] // DIM_BASE
-        border = self.canvas.border_mask()
+        layout = self.canvas.layout(self.plates, self.round_tiles)
+        one_per_stud = self.plates == ONLY_1X1 and not self.round_tiles and self.canvas.relief == "flat"
         bases = []
         for number, c in enumerate(self.get_bases()):
             distribution = {local_ids[brick_id]: count for brick_id, count in c.get_distribution().items()}
             ids = c.get_brick_ids()
             row, col = divmod(number, columns)
+            name = self.labels["base"].format(source=self.canvas.source, row=row + 1, col=col + 1)
             sizes: dict[int, dict[str, int]] = {}
-            if self.round_tiles:
-                on_border = border[row * DIM_BASE : (row + 1) * DIM_BASE, col * DIM_BASE : (col + 1) * DIM_BASE]
-                plates = pack_plates(ids, BORDER_SIZES, on_border)
-                for brick_id, count in zip(*np.unique(ids[~on_border], return_counts=True), strict=True):
-                    sizes.setdefault(local_ids[int(brick_id)], {})[self.labels["round_size"]] = int(count)
-            else:
-                plates = pack_plates(ids, self.plates) if self.plates != ONLY_1X1 else None
+            tiles = layout.tiles[row * DIM_BASE : (row + 1) * DIM_BASE, col * DIM_BASE : (col + 1) * DIM_BASE]
+            for brick_id, count in zip(*np.unique(ids[tiles], return_counts=True), strict=True):
+                sizes.setdefault(local_ids[int(brick_id)], {})[self.labels["round_size"]] = int(count)
+            plates = None if one_per_stud else _plates_on_base(layout.plates, row, col)
             for plate in plates or []:
                 by_size = sizes.setdefault(local_ids[plate.brick_id], {})
                 by_size[plate.size] = by_size.get(plate.size, 0) + 1
             bases.append(
                 {
-                    "name": self.labels["base"].format(source=self.canvas.source, row=row + 1, col=col + 1),
+                    "name": name,
+                    "supports": self._support_maps(layout, row, col, name),
                     "table": make_map(
                         pd.DataFrame(to_local(ids)), plate_regions(ids.shape, plates) if plates else None
                     ),
@@ -217,6 +239,31 @@ class PdfCreator:
                 }
             )
         return bases
+
+    def _support_maps(self, layout: Layout, row: int, col: int, name: str) -> list[dict[str, object]]:
+        """Return a baseplate's hidden layers, the lowest first: where each plate goes,
+        and how many of each size."""
+        maps = []
+        for number, layer in enumerate(layout.supports, start=1):
+            plates = _plates_on_base(layer, row, col)
+            if not plates:
+                continue
+            grid = np.zeros((DIM_BASE, DIM_BASE), dtype=int)
+            for plate in plates:
+                grid[plate.row : plate.row + plate.height, plate.col : plate.col + plate.width] = SUPPORT_CELL
+            sizes = Counter(plate.size for plate in plates)
+            maps.append(
+                {
+                    "name": self.labels["support_layer"].format(base=name, layer=number, total=len(layout.supports)),
+                    "table": make_map(
+                        pd.DataFrame(grid),
+                        plate_regions(grid.shape, plates),
+                        {0: "", SUPPORT_CELL: self.labels["support_mark"]},
+                    ),
+                    "sizes": dict(sorted(sizes.items(), reverse=True)),
+                }
+            )
+        return maps
 
     def get_used_colors(self) -> list[dict[str, object]]:
         """Return the colours actually present on the canvas, ordered by this
@@ -236,11 +283,36 @@ class PdfCreator:
             for brick_id, count in sorted(self.canvas.get_distribution().items())
         ]
 
+    def _assembly(self) -> dict[str, object]:
+        """Return what the guide says about holding the mosaic together."""
+        rows, cols = self.canvas.shape
+        if self.canvas.assembly != "panels" or not self.canvas.bricks:
+            return {"panels": False}
+        names = self.labels["assembly_parts"]
+        down, across = panel_grid(rows, cols)
+        return {
+            "panels": True,
+            "down": down,
+            "across": across,
+            "joins": pin_joins(rows, cols),
+            "too_large": max(rows, cols) > LARGEST_OFFICIAL_STUDS,
+            "parts": [
+                {"part": part, "name": names[part], "count": count}
+                for (_, part), count in assembly_parts(rows, cols).items()
+            ],
+        }
+
     def _round_part_totals(self) -> dict[str, int]:
         """Return how many round tiles and border plates the mosaic takes."""
-        parts = self.canvas.get_round_part_counts()
-        tiles = sum(count for (_, part), count in parts.items() if part == ROUND_TILE)
-        return {"tiles": tiles, "border": sum(parts.values()) - tiles}
+        layout = self.canvas.layout(self.plates, self.round_tiles)
+        return {"tiles": int(layout.tiles.sum()), "border": len(layout.plates)}
+
+    def _relief_part_totals(self) -> dict[str, int] | None:
+        """Return how many round tiles and hidden plates a relief takes, if it has one."""
+        if self.canvas.relief == "flat":
+            return None
+        layout = self.canvas.layout(self.plates, self.round_tiles)
+        return {"tiles": int(layout.tiles.sum()), "supports": layout.support_count}
 
     def generate_html(self, output_dir: Path | str | None = None, open_in_browser: bool = False) -> Path:
         """
@@ -255,7 +327,8 @@ class PdfCreator:
         rows, cols = self.canvas.shape
         distribution = self.canvas.get_distribution()
         colors = self.get_used_colors()
-        parts = self.canvas.get_round_part_counts() if self.round_tiles else self.canvas.get_part_counts(self.plates)
+        layout = self.canvas.layout(self.plates, self.round_tiles) if self.canvas.bricks else None
+        parts = layout.parts(self.canvas.get_brick_ids()) if layout else {}
         price = self.canvas.get_price(self.baseplates, self.currency, parts)
         t = self.labels
         html_out = template.render(
@@ -268,10 +341,13 @@ class PdfCreator:
             ),
             round_tiles=self.round_tiles,
             round_parts=self._round_part_totals() if self.round_tiles else None,
+            relief=self.canvas.relief,
+            assembly=self._assembly(),
+            relief_parts=self._relief_part_totals(),
             mosaic_size=f"{cols} x {rows} {t['studs']}",
             total_colors=len(distribution),
             total_bricks=sum(distribution.values()),
-            total_plates=sum(self.canvas.get_part_counts(self.plates).values()) if self.plates != ONLY_1X1 else None,
+            total_plates=len(layout.plates) if layout and self.plates != ONLY_1X1 else None,
             price=price,
             t=t,
             spares_note=t["spares"].format(percent=round(SPARE_RATE * 100)),

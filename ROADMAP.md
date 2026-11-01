@@ -20,6 +20,13 @@ it is based on a few listings for black parts only.
 - A limit on simultaneous PDF prints, each of which starts a full Chrome.
 - DNS rebinding: a host could change its address between the link check and the download.
 
+## Relief
+
+`--relief stepped` and `depth` haven't met real bricks. Build a small one to check that the stacks hold,
+how they attach across baseplates (plates stay within theirs, so nothing bridges two), and
+how it hangs. Then consider letting users correct the detected subject, gold and silver
+accents, and side builds for the raised parts.
+
 ## Smaller items
 
 - BrickLink accepts our wanted lists, and `bricklink.PART_COLORS` holds its catalog's

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from studify.models.bricklink import PLATE_PARTS, comes_in
+from studify.models.bricklink import PLATE_PARTS, TILE_PARTS, comes_in
 from studify.models.static import DIM_BASE
 
 # Every size, as written in the guide and on the command line. All are used by default.
@@ -53,6 +53,7 @@ class Plate:
     height: int
     width: int
     brick_id: int
+    tile: bool = False  # A smooth tile of that size, rather than a plate with studs.
 
     @property
     def size(self) -> str:
@@ -61,10 +62,13 @@ class Plate:
 
     @property
     def part(self) -> str:
-        return PLATE_PARTS[min(self.height, self.width), max(self.height, self.width)]
+        table = TILE_PARTS if self.tile else PLATE_PARTS
+        return table[min(self.height, self.width), max(self.height, self.width)]
 
 
-def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.ndarray | None = None) -> list[Plate]:
+def pack_plates(
+    grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.ndarray | None = None, tile: bool = False
+) -> list[Plate]:
     """
     Cover a grid of brick ids with plates, greedily: scanning from the top left,
     each uncovered stud starts the largest plate of one colour that fits there and
@@ -74,11 +78,13 @@ def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.n
     :param grid: (rows, cols) array of brick ids, usually one baseplate.
     :param sizes: Which plates to use, from ``PLATE_SIZES``.
     :param only: Boolean grid of the studs to cover. Defaults to all of them.
+    :param tile: Use smooth tiles of these sizes rather than plates.
     :return: Plates covering each of those studs exactly once.
     """
     rows, cols = grid.shape
     shapes = _shapes(sizes)
     covered = np.zeros(grid.shape, dtype=bool) if only is None else ~only
+    table = TILE_PARTS if tile else PLATE_PARTS
     plates = []
     for row in range(rows):
         for col in range(cols):
@@ -86,9 +92,7 @@ def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.n
                 continue
             brick_id = int(grid[row, col])
             for height, width in shapes:
-                if (height, width) != (1, 1) and not comes_in(
-                    brick_id, PLATE_PARTS[min(height, width), max(height, width)]
-                ):
+                if (height, width) != (1, 1) and not comes_in(brick_id, table[min(height, width), max(height, width)]):
                     continue
                 area = (row, row + height), (col, col + width)
                 if area[0][1] > rows or area[1][1] > cols:
@@ -96,25 +100,31 @@ def pack_plates(grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.n
                 cells = slice(*area[0]), slice(*area[1])
                 if (grid[cells] == brick_id).all() and not covered[cells].any():
                     covered[cells] = True
-                    plates.append(Plate(row, col, height, width, brick_id))
+                    plates.append(Plate(row, col, height, width, brick_id, tile))
                     break
     return plates
 
 
 def pack_baseplates(
-    grid: np.ndarray, sizes: Iterable[str] = PLATE_SIZES, only: np.ndarray | None = None
+    grid: np.ndarray,
+    sizes: Iterable[str] = PLATE_SIZES,
+    only: np.ndarray | None = None,
+    cell: int = DIM_BASE,
+    tile: bool = False,
 ) -> list[Plate]:
-    """Pack a whole mosaic baseplate by baseplate, with rows and columns given
-    relative to the whole mosaic. See ``pack_plates`` for ``only``."""
+    """Pack a whole mosaic baseplate by baseplate, or by whatever ``cell`` studs wide
+    part it is built on, with rows and columns given relative to the whole mosaic. See
+    ``pack_plates`` for ``only``."""
     rows, cols = grid.shape
     return [
-        Plate(row + plate.row, col + plate.col, plate.height, plate.width, plate.brick_id)
-        for row in range(0, rows, DIM_BASE)
-        for col in range(0, cols, DIM_BASE)
+        Plate(row + plate.row, col + plate.col, plate.height, plate.width, plate.brick_id, plate.tile)
+        for row in range(0, rows, cell)
+        for col in range(0, cols, cell)
         for plate in pack_plates(
-            grid[row : row + DIM_BASE, col : col + DIM_BASE],
+            grid[row : row + cell, col : col + cell],
             sizes,
-            None if only is None else only[row : row + DIM_BASE, col : col + DIM_BASE],
+            None if only is None else only[row : row + cell, col : col + cell],
+            tile,
         )
     ]
 

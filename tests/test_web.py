@@ -322,7 +322,7 @@ def test_a_round_build_frames_its_tiles_with_1x4_plates(png_bytes):
     # A 2-stud frame on one baseplate divides by 4 on every side, so needs only 1x4s.
     assert result["round_tile_count"] == 28 * 28
     assert result["plates"] - result["round_tile_count"] == (32 * 32 - 28 * 28) // 4
-    assert "<ITEMID>3710</ITEMID>" in result["wanted_list"] and "<ITEMID>3024</ITEMID>" not in result["wanted_list"]
+    assert "<ITEMID>2431</ITEMID>" in result["wanted_list"] and "<ITEMID>3070</ITEMID>" not in result["wanted_list"]
 
 
 def test_round_tiles_reach_the_guide(png_bytes, monkeypatch):
@@ -331,9 +331,49 @@ def test_round_tiles_reach_the_guide(png_bytes, monkeypatch):
     html = service.build_pdf(session, size=1, frame=2, max_colors=None, style="natural", round_tiles=True)
     text = html.read_text(encoding="utf-8")
     assert "98138" in text
-    assert "ronde 1x1" in text and "1x4" in text and "Plaques de bordure" in text
+    assert "ronde 1x1" in text and "1x4" in text and "Tuiles de bordure" in text
     assert text.count('colspan="4"') + text.count('rowspan="4"') == (32 * 32 - 28 * 28) // 4
     assert 'class="pixelated"' not in text
+
+
+def test_model_route_describes_the_latest_render(png_bytes):
+    from studify.web.app import create_app
+
+    session = service.save_source(png_bytes, "flag.png")
+    client = create_app().server.test_client()
+    assert client.get(f"/model/{session}/pop.json").status_code == 404  # never rendered
+
+    service.render_styles(session, size=1, frame=2, max_colors=None, relief="stepped")
+    model = client.get(f"/model/{session}/pop.json").get_json()
+    studs = 32 * 32
+    assert (model["rows"], model["cols"]) == (32, 32)
+    assert len(model["colors"]) == len(model["heights"]) == len(model["regions"]) == studs
+    assert max(model["colors"]) < len(model["palette"])
+    assert all(color.startswith("#") and len(color) == 7 for color in model["palette"])
+    assert len(model["plates"]) % 4 == 0 and len(model["supports"]) % 5 == 0
+    assert model["supports"] and max(model["heights"]) == max(model["supports"][::5])
+
+    assert model["assembly"] == "baseplates"
+
+    service.render_styles(session, size=1, frame=2, max_colors=None)  # Back to flat.
+    assert client.get(f"/model/{session}/pop.json").get_json()["supports"] == []
+
+    service.render_styles(session, size=1, frame=2, max_colors=None, assembly="panels")
+    assert client.get(f"/model/{session}/pop.json").get_json()["assembly"] == "panels"
+
+    assert client.get(f"/model/{'0' * 32}/pop.json").status_code == 404  # unknown session
+    assert client.get(f"/model/{session}/baroque.json").status_code == 404
+
+
+def test_three_js_is_served_but_not_loaded_with_every_page():
+    from studify.web.app import create_app
+
+    client = create_app().server.test_client()
+    page = client.get("/").get_data(as_text=True)
+    assert "viewer.js" in page and "three.module" not in page and "three.core" not in page
+    for name in ("three.module.min.js", "three.core.js"):
+        with client.get(f"/assets/vendor/three/{name}") as response:
+            assert response.status_code == 200
 
 
 class TestCrop:

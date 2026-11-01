@@ -12,6 +12,7 @@ from collections import Counter
 from collections.abc import Mapping
 from math import ceil
 
+from studify.models.assembly import ASSEMBLY_PART_NUMBERS
 from studify.models.pricing import SPARE_RATE
 from studify.models.static import COLORS
 
@@ -25,6 +26,16 @@ PLATE_PARTS = {
 }
 # Plate 1 x 1: what a mosaic is made of, unless it uses larger plates.
 PLATE_1X1 = PLATE_PARTS[1, 1]
+# BrickLink part number of each smooth tile, by (short side, long side): what shows on
+# a mosaic, its plates only ever hidden under a relief.
+TILE_PARTS = {
+    (1, 1): "3070",
+    (1, 2): "3069",
+    (1, 3): "63864",
+    (1, 4): "2431",
+    (2, 2): "3068",
+}
+TILE_1X1 = TILE_PARTS[1, 1]
 # Tile, Round 1 x 1: the other way to build a mosaic, one per stud.
 ROUND_TILE = "98138"
 
@@ -140,10 +151,36 @@ PART_COLORS = {
         + (88, 89, 93, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 241)
     ),
     # Checked November 2026.
+    "3070": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 24, 28, 34, 36, 39, 42, 47, 48, 55, 56, 59, 63, 68, 69, 71, 72, 80, 85)
+        + (86, 88, 89, 90, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220, 241)
+    ),
+    "3069": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 23, 24, 28, 34, 36, 39, 42, 47, 48, 55, 56, 59, 63, 68, 69, 71, 72, 80)
+        + (85, 86, 87, 88, 89, 90, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220, 241)
+    ),
+    "63864": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 11, 28, 34, 36, 39, 42, 47, 48, 55, 59, 63, 68, 69, 71, 80, 85, 86, 88, 89, 90)
+        + (103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157)
+    ),
+    "2431": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 26, 28, 31, 33, 34, 36, 39, 42, 47, 48, 55, 59, 63, 68, 69, 71, 72, 76)
+        + (80, 85, 86, 87, 88, 89, 90, 103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220, 241)
+    ),
+    "3068": frozenset(
+        (1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 23, 33, 34, 36, 39, 41, 42, 47, 48, 55, 56, 59, 63, 68, 69, 71, 80, 85)
+        + (86, 88, 89, 90, 97, 103, 104, 105, 110, 120, 150, 152, 153, 154, 156, 157, 158, 220)
+    ),
     ROUND_TILE: frozenset(
         (1, 2, 3, 4, 5, 6, 7, 11, 28, 34, 36, 39, 42, 47, 55, 59, 63, 68, 69, 71, 80, 85, 86, 88, 89, 90, 95)
         + (103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220)
     ),
+}
+
+# Black, the only colour the structure is listed in, is in all of these (checked
+# November 2026 for the parts specific to it), and 3022 is already above.
+PART_COLORS |= {
+    part: frozenset({BRICKLINK_COLOR_IDS["Black"]}) for part in ASSEMBLY_PART_NUMBERS if part not in PART_COLORS
 }
 
 _NAMES = list(COLORS)
@@ -176,11 +213,11 @@ def wanted_list_xml(distribution: Mapping[int, int], parts: Mapping[tuple[int, s
     are left out, and so are colours in ``unlisted_colors``.
 
     :param distribution: Bricks needed, as {brick id: count}.
-    :param parts: Larger plates to list instead of 1x1s, as {(brick id, BrickLink
+    :param parts: The parts to list instead of 1x1 tiles, as {(brick id, BrickLink
         part number): count}; see ``Canvas.get_part_counts``.
     """
     if parts is None:
-        parts = {(brick_id, PLATE_1X1): count for brick_id, count in distribution.items()}
+        parts = {(brick_id, TILE_1X1): count for brick_id, count in distribution.items()}
     # Two names can share a BrickLink colour.
     counts = Counter()
     for (brick_id, part), count in parts.items():

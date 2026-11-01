@@ -144,9 +144,9 @@ class TestGuide:
         plain = PdfCreator(canvas, plates=["1x1"]).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
         html = PdfCreator(canvas).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
 
-        assert "Bricks needed" in plain and "Plates needed" not in plain
-        assert "Plates needed" in html and "1x4&nbsp;&times;&nbsp;256" in html
-        assert "<dt>Plates</dt><dd>512</dd>" in html
+        assert "Bricks needed" in plain and "Tiles needed" not in plain
+        assert "Tiles needed" in html and "1x4&nbsp;&times;&nbsp;256" in html
+        assert "<dt>Tiles</dt><dd>512</dd>" in html
         assert html.count("border-end") > plain.count("border-end")
 
     def test_each_plate_is_one_merged_cell(self):
@@ -181,28 +181,28 @@ class TestGuide:
         html = PdfCreator(canvas, lang="fr").generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
         assert '<html lang="fr">' in html
         assert "Baseplate ligne 1, colonne 2" in html
-        assert "Plaques nécessaires" in html and "hors livraison" in html
+        assert "Tuiles nécessaires" in html and "hors livraison" in html
         assert "baseplates LEGO officielles" in html
-        assert "Plates needed" not in html
+        assert "Tiles needed" not in html
 
 
 def test_cli_plates_and_lang(red_blue_image, tmp_path, capsys):
     args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
     assert main([*args, "--plates", "1x1,2x2", "--bricklink", "--lang", "fr"]) == 0
-    assert "Plates to place:" in capsys.readouterr().out
+    assert "Tiles to place:" in capsys.readouterr().out
     wanted_list = (tmp_path / "red_blue-bricklink.xml").read_text(encoding="utf-8")
-    assert "<ITEMID>3022</ITEMID>" in wanted_list and "<ITEMID>3710</ITEMID>" not in wanted_list
-    assert "Plaques nécessaires" in (tmp_path / "red_blue.html").read_text(encoding="utf-8")
+    assert "<ITEMID>3068</ITEMID>" in wanted_list and "<ITEMID>2431</ITEMID>" not in wanted_list
+    assert "Tuiles nécessaires" in (tmp_path / "red_blue.html").read_text(encoding="utf-8")
 
 
 def test_cli_uses_every_size_by_default_and_can_use_only_1x1(red_blue_image, tmp_path):
     args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open", "--bricklink"]
     assert main(args) == 0
-    assert "Plates needed" in (tmp_path / "red_blue.html").read_text(encoding="utf-8")
+    assert "Tiles needed" in (tmp_path / "red_blue.html").read_text(encoding="utf-8")
 
     assert main([*args, "--plates", "1x1"]) == 0
     assert "Bricks needed" in (tmp_path / "red_blue.html").read_text(encoding="utf-8")
-    assert "<ITEMID>3024</ITEMID>" in (tmp_path / "red_blue-bricklink.xml").read_text(encoding="utf-8")
+    assert "<ITEMID>3070</ITEMID>" in (tmp_path / "red_blue-bricklink.xml").read_text(encoding="utf-8")
 
 
 def test_cli_rejects_an_unknown_plate_size(red_blue_image, capsys):

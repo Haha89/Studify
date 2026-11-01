@@ -34,6 +34,10 @@ ROUND_LIGHT_SLOPE = 0.1  # Brightness change from a tile's centre to its edge, a
 SUPERSAMPLING = 4  # Smooths the tiles' edges.
 
 
+PLATE_HEIGHT = 0.4  # Of a stud's width: 3.2 mm against 8 mm.
+CAST_SHADOW_SHADE = 0.55  # Under a raised part's shadow, with the light at 45 degrees.
+
+
 def tile_scale(rows: int, cols: int) -> int:
     """Return how many pixels per stud to draw a mosaic of this size at."""
     return min(MAX_SCALE, max(MIN_SCALE, TARGET_DIMENSION // max(rows, cols)))
@@ -130,3 +134,29 @@ def render_round(colors: np.ndarray, scale: int | None = None, regions: np.ndarr
         return round_tiles
     plates = np.kron(regions >= 0, np.ones((scale, scale), dtype=bool))
     return np.where(plates[..., None], render_tiles(colors, regions, scale), round_tiles)
+
+
+def _cast_shadows(pixels: np.ndarray, heights: np.ndarray, scale: int) -> np.ndarray:
+    """Darken what raised parts shade, down and to the right of them."""
+    surface = np.kron(heights, np.ones((scale, scale), dtype=np.float32)) * scale * PLATE_HEIGHT
+    shaded = np.zeros(surface.shape, dtype=bool)
+    for reach in range(1, int(surface.max()) + 1):
+        shaded[reach:, reach:] |= surface[:-reach, :-reach] - surface[reach:, reach:] >= reach
+    return np.where(shaded[..., None], (pixels * CAST_SHADOW_SHADE).astype(np.uint8), pixels)
+
+
+def render_mosaic(
+    colors: np.ndarray, regions: np.ndarray, heights: np.ndarray | None = None, scale: int | None = None
+) -> np.ndarray:
+    """
+    Draw a mosaic as built, whatever its pieces.
+
+    :param colors: (rows, cols, 3) uint8 RGB array, one pixel per stud.
+    :param regions: Grid numbering each stud by its plate, negative for a round tile.
+    :param heights: Plates stacked under each stud's visible piece, if any.
+    :param scale: Pixels per stud. Defaults to ``tile_scale``.
+    """
+    rows, cols = regions.shape
+    scale = scale if scale is not None else tile_scale(rows, cols)
+    pixels = render_round(colors, scale, regions) if (regions < 0).any() else render_tiles(colors, regions, scale)
+    return _cast_shadows(pixels, heights, scale) if heights is not None and heights.any() else pixels

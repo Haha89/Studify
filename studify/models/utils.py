@@ -240,7 +240,9 @@ def get_distribution(bricks: list[list[Brick]]) -> dict[int, int]:
     return dict(sorted(counts.items()))
 
 
-def _merged_cell(grid: np.ndarray, regions: np.ndarray, row: int, col: int) -> str:
+def _merged_cell(
+    grid: np.ndarray, regions: np.ndarray, row: int, col: int, labels: dict[int, str] | None = None
+) -> str:
     """Return the cell for the rectangle of ``regions`` whose top-left stud is here.
     It takes its top and left edges from that stud and its bottom and right edges
     from the opposite one (see ``get_class``)."""
@@ -252,10 +254,12 @@ def _merged_cell(grid: np.ndarray, regions: np.ndarray, row: int, col: int) -> s
     classes = [name for name in first if name.endswith(("top", "start"))]
     classes += [name for name in last if name.endswith(("bottom", "end"))]
     spans = (f' rowspan="{height}"' if height > 1 else "") + (f' colspan="{width}"' if width > 1 else "")
-    return f'<td{spans} class="c{grid[row, col]} {" ".join(classes)}">{grid[row, col]}</td>'
+    value = int(grid[row, col])
+    text = labels.get(value, value) if labels else value
+    return f'<td{spans} class="c{value} {" ".join(classes)}">{text}</td>'
 
 
-def make_map(df: pd.DataFrame, regions: np.ndarray | None = None) -> str:
+def make_map(df: pd.DataFrame, regions: np.ndarray | None = None, labels: dict[int, str] | None = None) -> str:
     """
     Render a grid of brick ids as an HTML table (sizing and borders are entirely
     CSS-driven, see ``.stud-map`` in style.css), with 1-based row and column
@@ -265,6 +269,7 @@ def make_map(df: pd.DataFrame, regions: np.ndarray | None = None) -> str:
     :param df: Grid of brick ids, one row per canvas row.
     :param regions: Draw each of these numbered rectangles (e.g. each plate) as one
         merged cell showing its brick id, rather than one cell per stud.
+    :param labels: With ``regions``, text to show instead of these brick ids.
     :return: An HTML ``<table>`` fragment.
     """
     grid = np.asarray(df, dtype=int)
@@ -280,7 +285,7 @@ def make_map(df: pd.DataFrame, regions: np.ndarray | None = None) -> str:
                 cells += f'<td class="c{grid[row, col]} {get_class(grid, row, col)}">{grid[row, col]}</td>'
             elif regions[row, col] not in seen:
                 seen.add(regions[row, col])
-                cells += _merged_cell(grid, regions, row, col)
+                cells += _merged_cell(grid, regions, row, col, labels)
         body += f"<tr><th>{row + 1}</th>{cells}</tr>"
 
     return f'<table class="stud-map"><thead><tr><th></th>{header}</tr></thead><tbody>{body}</tbody></table>'

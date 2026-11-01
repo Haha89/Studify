@@ -92,6 +92,10 @@ uv run studify --gui
 | `--plates` | Plate sizes to use, comma-separated, from `1x1,1x2,1x3,1x4,2x2` (default: all). 1x1 is always included; `--plates 1x1` gives one plate per stud. |
 | `--lang` | Language of the guide: `en` (default) or `fr`. |
 | `--round-tiles` | Build the picture from round 1x1 tiles (BrickLink 98138), one per stud, in the colours they come in, and its border (frame and letterbox bars) from plates up to 1x4. Overrides `--plates`. Priced like 1x1 plates; the baseplate shows between the tiles, so pick a dark one. |
+| `--relief` | Depth: `flat` (default) or `stepped` (subject raised 2 plates on hidden black plates, its centre 3). Built from plates, so not with `--round-tiles`. Stepped builds are untested with real bricks. |
+| `--relief depth` | Like `stepped`, but up to 4 hidden plates follow how near each part of the picture looks, guessed by [Depth Anything V2 Small](https://github.com/DepthAnything/Depth-Anything-V2) (Apache-2.0). The 27 MB model downloads on first use, to `~/.cache/studify` (or `STUDIFY_CACHE`), and needs `uv sync --extra depth`. |
+| `--assembly` | What to build on: `baseplates` (default), which need fixing to a rigid board, or `panels`: the pinned 16x16 panels and brick frame of the LEGO Art sets, all in the wanted list and the price. Other sizes are worked out from a 3 x 3 panel set and haven't been built. |
+| `--sharp-edges` | Give each stud the colour covering most of it, so that edges between colours stay sharp, instead of blending into a third colour: for logos and flat graphics. Ignored with `--dither`. |
 | `--bricklink` | Also write a BrickLink wanted list, `<image-name>-bricklink.xml`, beside the guide. |
 | `--baseplates` | Price `official` LEGO baseplates (default) or cheaper `compatible` ones. |
 | `--currency` | Currency of the price estimate: `EUR` (default) or `USD`. |
@@ -168,6 +172,19 @@ before ordering.
 By default the list and the guide use 1x1, 1x2, 1x3, 1x4 and 2x2 plates wherever a colour
 allows, each within its baseplate, and the stud maps draw each plate as one box. Choose fewer
 with `--plates`; 1x1 always stays, as it is the only plate that fits a lone stud.
+
+## Pieces
+
+What shows is always smooth: square and rectangular tiles (BrickLink 3070, 3069, 63864, 2431
+and 3068), or round 1x1 tiles (98138). Plates with studs are only used hidden, under a
+`--relief stepped` subject, since nothing stacks on a tile.
+
+## 3D view
+
+Each style in the web app has a "Vue 3D" button: drag to turn the mosaic, scroll to zoom, double-click to
+go back to the start. Buttons show the back, with its hangers, and an exploded view with the pins
+between panels. The frame and the back are simplified. It draws every piece with [Three.js](https://threejs.org) (MIT), kept in `web/assets/vendor`
+so that it works offline.
 
 ## Pricing
 

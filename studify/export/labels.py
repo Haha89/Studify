@@ -9,19 +9,68 @@ LABELS = {
         "baseplates": "Baseplates",
         "colors": "Colors",
         "bricks": "Bricks",
-        "plates": "Plates",
+        "plates": "Tiles",
         "cost": "Est. cost",
         "spares": "incl. {percent}&nbsp;% spares",
         "baseplates_note": "{count} {kind} baseplates {price}",
         "official": "official LEGO",
         "compatible": "compatible",
         "no_shipping": "shipping not included",
-        "plates_note": "Larger plates are priced from a rough comparison of a few listings: check before ordering.",
-        "round_note": "Picture in round 1x1 tiles (BrickLink 98138), one per stud, and border in plates up to 1x4, "
-        "priced from a rough comparison of a few listings. The baseplate shows between the tiles: pick a dark one.",
+        "plates_note": "Larger tiles are priced from a few listings only: check before ordering.",
+        "round_note": "Picture in round 1x1 tiles (BrickLink 98138), one per stud, "
+        "and border in square tiles up to 1x4, "
+        "priced from a rough comparison of a few listings.",
+        "round_base_note": "The baseplate shows between the tiles: pick a dark one.",
+        "panels": "Panels",
+        "quantity": "Quantity",
+        "assembly": "Holding it together",
+        "assembly_baseplates": "Baseplates don't connect to each other. Fix them side by side to a flat, rigid board "
+        "before building, and hang the board, not the mosaic.",
+        "assembly_intro": "Built like the LEGO Art sets, on {across} x {down} panels of 16 x 16 studs. All these "
+        "parts are in the BrickLink list.",
+        "assembly_build": "Build each panel on its own, from the stud maps: a baseplate's page covers 4 panels.",
+        "assembly_pins": "Pin the panels together with 3 Technic pins per join, {joins} joins in all: rows first, "
+        "then the rows to each other.",
+        "assembly_frame": "Frame: 2 bricks with pin along each outer panel side, then plates 2 x 16 and 2 x 12 under "
+        "the edge to bridge the joins, and the corners.",
+        "assembly_back": "Turn it over carefully: a corner plate where four panels meet, and a plate 2 x 2 "
+        "on each panel.",
+        "assembly_tiles": "Back to the front: bricks 1 x 4, 1 x 8 and 1 x 16 around the edge, then the tiles on top.",
+        "assembly_hang": "Pin the 2 hangers to the back of the top row, with 2 pins each.",
+        "assembly_source": "Adapted from LEGO's own instructions for a 3 x 3 panel set (31197). Other sizes are "
+        "worked out from it, and haven't been built: check it holds before hanging it.",
+        "assembly_too_large": "This one is larger than any official set built this way (128 studs, about 1 m): "
+        "keep it off the wall, or back it with a rigid board.",
+        "assembly_parts": {
+            "65803": "Panel, Technic brick 16 x 16 x 1 1/3 with holes",
+            "2780": "Technic pin",
+            "2458": "Brick 1 x 2 with pin",
+            "67139": "Hanger, Technic liftarm 1 x 3 x 5 with cutout",
+            "2445": "Plate 2 x 12",
+            "4282": "Plate 2 x 16",
+            "2465": "Brick 1 x 16",
+            "3008": "Brick 1 x 8",
+            "3010": "Brick 1 x 4",
+            "3005": "Brick 1 x 1",
+            "2357": "Brick 2 x 2 corner",
+            "2420": "Plate 2 x 2 corner",
+            "11212": "Plate 3 x 3",
+            "3022": "Plate 2 x 2",
+            "4162": "Tile 1 x 8",
+            "63864": "Tile 1 x 3",
+        },
+        "stepped_note": "Relief: the subject stands on hidden black plates, its centre higher still. Build each "
+        "baseplate's support layers first, from the lowest up. Untested with real bricks: check it holds and hangs.",
+        "depth_note": "Relief: hidden black plates raise each part of the picture according to how near a model "
+        "guessed it is. Build each baseplate's hidden layers first, from the lowest up. Untested with real bricks: "
+        "check it holds and hangs.",
+        "support_plates": "Hidden plates",
+        "support_layer": "{base} - hidden layer {layer} of {total}",
+        "support_mark": "S",
+        "support_needed": "Black plates needed",
         "round_tiles": "Round tiles",
         "round_size": "round 1x1",
-        "border_plates": "Border plates",
+        "border_plates": "Border tiles",
         "pieces_needed": "Pieces needed",
         "rare": "Rare colours, pricey or hard to find in bulk:",
         "overview": "Overview",
@@ -30,7 +79,7 @@ LABELS = {
         "reconstructed": "Reconstructed",
         "mosaic_alt": "Reconstructed LEGO mosaic",
         "needed": "Bricks needed",
-        "plates_needed": "Plates needed",
+        "plates_needed": "Tiles needed",
         "colors_used": "Colors used",
         "id": "Id",
         "swatch": "Swatch",
@@ -47,19 +96,70 @@ LABELS = {
         "baseplates": "Baseplates",
         "colors": "Couleurs",
         "bricks": "Briques",
-        "plates": "Plaques",
+        "plates": "Tuiles",
         "cost": "Coût estimé",
         "spares": "dont {percent}&nbsp;% de rab",
         "baseplates_note": "{count} baseplates {kind} {price}",
         "official": "LEGO officielles",
         "compatible": "compatibles",
         "no_shipping": "hors livraison",
-        "plates_note": "Grandes plaques estimées d'après quelques annonces seulement : vérifie avant de commander.",
-        "round_note": "Image en tuiles rondes 1x1 (BrickLink 98138), une par tenon, et bordure en plaques jusqu'à 1x4, "
-        "prix estimés d'après quelques annonces seulement. La baseplate se voit entre les tuiles : choisis-la sombre.",
+        "plates_note": "Grandes tuiles estimées d'après quelques annonces seulement : vérifie avant de commander.",
+        "round_note": "Image en tuiles rondes 1x1 (BrickLink 98138), une par tenon, "
+        "et bordure en tuiles carrées jusqu'à 1x4, "
+        "prix estimés d'après quelques annonces seulement.",
+        "round_base_note": "La baseplate se voit entre les tuiles : choisis-la sombre.",
+        "panels": "Panneaux",
+        "quantity": "Quantité",
+        "assembly": "Assemblage",
+        "assembly_baseplates": "Les baseplates ne se relient pas entre elles. Fixe-les côte à côte sur un panneau plat "
+        "et rigide avant de construire, et accroche le panneau, pas la mosaïque.",
+        "assembly_intro": "Montage comme les sets LEGO Art, sur {across} x {down} panneaux de 16 x 16 tenons. "
+        "Toutes ces pièces sont dans la liste BrickLink.",
+        "assembly_build": "Construis chaque panneau séparément, d'après les cartes : la page d'une baseplate couvre "
+        "4 panneaux.",
+        "assembly_pins": "Relie les panneaux avec 3 goujons Technic par jonction, {joins} jonctions en tout : "
+        "d'abord les rangées, puis les rangées entre elles.",
+        "assembly_frame": "Cadre : 2 briques à goujon le long de chaque côté extérieur de panneau, puis des plaques "
+        "2 x 16 et 2 x 12 sous le bord pour couvrir les jonctions, et les angles.",
+        "assembly_back": "Retourne avec précaution : une plaque d'angle là où quatre panneaux se touchent, et une "
+        "plaque 2 x 2 sur chaque panneau.",
+        "assembly_tiles": "Côté face : briques 1 x 4, 1 x 8 et 1 x 16 tout autour, puis les tuiles par-dessus.",
+        "assembly_hang": "Fixe les 2 accroches au dos de la rangée du haut, avec 2 goujons chacune.",
+        "assembly_source": "Adapté des instructions officielles LEGO d'un set de 3 x 3 panneaux (31197). Les autres "
+        "tailles en sont déduites et n'ont pas été construites : vérifie la solidité avant d'accrocher.",
+        "assembly_too_large": "Celle-ci dépasse le plus grand set officiel monté ainsi (128 tenons, environ 1 m) : "
+        "ne l'accroche pas sans la renforcer par un panneau rigide.",
+        "assembly_parts": {
+            "65803": "Panneau, brique Technic 16 x 16 x 1 1/3 avec trous",
+            "2780": "Goujon Technic",
+            "2458": "Brique 1 x 2 à goujon",
+            "67139": "Accroche, élément Technic 1 x 3 x 5 avec découpe",
+            "2445": "Plaque 2 x 12",
+            "4282": "Plaque 2 x 16",
+            "2465": "Brique 1 x 16",
+            "3008": "Brique 1 x 8",
+            "3010": "Brique 1 x 4",
+            "3005": "Brique 1 x 1",
+            "2357": "Brique d'angle 2 x 2",
+            "2420": "Plaque d'angle 2 x 2",
+            "11212": "Plaque 3 x 3",
+            "3022": "Plaque 2 x 2",
+            "4162": "Tuile 1 x 8",
+            "63864": "Tuile 1 x 3",
+        },
+        "stepped_note": "Relief : le sujet repose sur des plaques noires cachées, son centre plus haut encore. Monte "
+        "d'abord les couches cachées de chaque baseplate, de bas en haut. Non testé avec de vraies briques : "
+        "vérifie la solidité et la fixation.",
+        "depth_note": "Relief : des plaques noires cachées surélèvent chaque zone selon la distance estimée par un "
+        "modèle. Monte d'abord les couches cachées de chaque baseplate, de bas en haut. Non testé avec de vraies "
+        "briques : vérifie la solidité et la fixation.",
+        "support_plates": "Plaques cachées",
+        "support_layer": "{base} - couche cachée {layer} sur {total}",
+        "support_mark": "S",
+        "support_needed": "Plaques noires nécessaires",
         "round_tiles": "Tuiles rondes",
         "round_size": "ronde 1x1",
-        "border_plates": "Plaques de bordure",
+        "border_plates": "Tuiles de bordure",
         "pieces_needed": "Pièces nécessaires",
         "rare": "Couleurs rares, chères ou difficiles à trouver en quantité :",
         "overview": "Aperçu",
@@ -68,7 +168,7 @@ LABELS = {
         "reconstructed": "Mosaïque",
         "mosaic_alt": "Mosaïque LEGO reconstituée",
         "needed": "Briques nécessaires",
-        "plates_needed": "Plaques nécessaires",
+        "plates_needed": "Tuiles nécessaires",
         "colors_used": "Couleurs utilisées",
         "id": "N°",
         "swatch": "Teinte",

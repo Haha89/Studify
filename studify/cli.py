@@ -5,6 +5,8 @@ from pathlib import Path
 
 from studify.export.labels import LABELS
 from studify.models.brickstore import BrickStore
+from studify.models.depth import MODEL_BYTES, DepthError
+from studify.models.depth import model_path as depth_model_path
 from studify.models.plates import PLATE_SIZES, plate_sizes
 from studify.models.static import DIM_BASE
 from studify.models.style import STYLES
@@ -71,6 +73,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Blend colors the palette lacks with Floyd-Steinberg dithering.",
     )
     parser.add_argument(
+        "--sharp-edges",
+        action="store_true",
+        help="Give each stud the colour covering most of it, so that edges between colours stay "
+        "sharp: for logos and flat graphics. Ignored with --dither.",
+    )
+    parser.add_argument(
         "--keep-strays",
         action="store_true",
         help="Keep isolated bricks instead of merging them into their surroundings.",
@@ -93,6 +101,21 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Build the picture from round 1x1 tiles, one per stud, in the colours they come in, "
         "and its border from plates up to 1x4. Overrides --plates.",
+    )
+    parser.add_argument(
+        "--relief",
+        choices=["flat", "stepped", "depth"],
+        default="flat",
+        help="Depth: flat (default), stepped (subject raised on hidden plates, its core higher "
+        "still) or depth (stacks following how near each part looks, guessed by a model downloaded "
+        "on first use, 27 MB, needs uv sync --extra depth). Not with --round-tiles.",
+    )
+    parser.add_argument(
+        "--assembly",
+        choices=["baseplates", "panels"],
+        default="baseplates",
+        help="What to build on: baseplates (default), which need fixing to a rigid board, or the "
+        "pinned 16x16 panels and brick frame of the LEGO Art sets.",
     )
     parser.add_argument(
         "--lang",
@@ -141,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.image is None:
         parser.error("the following arguments are required: image (or pass --gui)")
+    if args.round_tiles and args.relief != "flat":
+        parser.error("--relief is built on stacks of plates, so can't be used with --round-tiles")
     if args.size < 1:
         parser.error("--size must be at least 1")
     if not 0 <= args.frame < DIM_BASE // 2:
@@ -157,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             parser.error(str(exc))
 
+    if args.relief == "depth" and not depth_model_path().is_file():
+        print(f"Downloading the depth model ({MODEL_BYTES // 10**6} MB), just this once...")
     try:
         process(
             size=args.size,
@@ -178,10 +205,13 @@ def main(argv: list[str] | None = None) -> int:
             tinted=not args.plain_maps,
             plates=args.plates,
             round_tiles=args.round_tiles,
+            relief=args.relief,
+            assembly=args.assembly,
+            sharp=args.sharp_edges,
             lang=args.lang,
             clean_strays=not args.keep_strays,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, DepthError) as exc:
         parser.error(str(exc))
     return 0
 

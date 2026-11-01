@@ -14,8 +14,13 @@ Sources (checked October 2026):
   0.027-0.034 for a 1x4 and 0.016-0.026 for a 2x2; LEGO Pick a Brick at EUR 0.06 for a
   1x1, 0.08 for a 1x2, 0.07 for a 1x3 and 0.12 for a 1x4 (via brickmissing.com).
   BrickLink's price guide wasn't readable, and neither source covers everything.
+- Square tiles: Brick Owl listings for new black parts around USD 0.025-0.033 for a
+  1x1 and 0.008-0.042 for a 1x4, in line with plates; none found for a 1x2, 1x3 or 2x2,
+  so those are simply priced like the same plates.
 - Round 1x1 tiles: Brick Owl listings start around USD 0.003-0.04, which doesn't
   show them being dearer or cheaper than 1x1 plates.
+- 16x16 Technic panels (65803): Brick Owl listings around USD 2-5 for black. The
+  rest of the structure's factors are rough guesses from its parts' sizes, not prices.
 - Official 32x32 baseplate (11023): USD 7.99 on LEGO.com, EUR 8.99 at EU retailers.
 - Compatible (non-LEGO) 32x32 baseplates: about EUR 2 each on Amazon.
 """
@@ -52,7 +57,27 @@ PART_PRICE_FACTORS = {
     "3623": 1.2,  # 1x3
     "3710": 1.5,  # 1x4
     "3022": 1.0,  # 2x2
+    "3070": 1.0,  # Tile 1x1
+    "3069": 1.0,  # Tile 1x2
+    "63864": 1.2,  # Tile 1x3
+    "2431": 1.5,  # Tile 1x4
+    "3068": 1.0,  # Tile 2x2
     "98138": 1.0,  # Round tile 1x1
+    # What holds a mosaic together when built on panels (see ``assembly``).
+    "65803": 100.0,  # Panel 16x16
+    "2780": 1.0,  # Pin
+    "2458": 3.0,  # Brick 1x2 with pin
+    "67139": 10.0,  # Hanger
+    "2445": 8.0,  # Plate 2x12
+    "4282": 12.0,  # Plate 2x16
+    "2465": 15.0,  # Brick 1x16
+    "3008": 6.0,  # Brick 1x8
+    "3010": 3.0,  # Brick 1x4
+    "3005": 1.0,  # Brick 1x1
+    "2357": 2.0,  # Brick 2x2 corner
+    "2420": 1.0,  # Plate 2x2 corner
+    "11212": 3.0,  # Plate 3x3
+    "4162": 5.0,  # Tile 1x8
 }
 
 # Share of extra bricks to buy: some always go missing, and sellers miscount.
