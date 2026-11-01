@@ -91,7 +91,7 @@ RARE_COLORS = frozenset(
 
 # Which colour tiers each palette choice draws from. "buyable" is the default:
 # on sample pictures, dropping rare colours left the mosaic almost unchanged
-# but cut its estimated price by about 10-50 %; "common" alone visibly degrades skin tones.
+# but cut its estimated price by about 5-30 %; "common" alone visibly degrades skin tones.
 PALETTE_TIERS = {
     "buyable": ("common", "uncommon"),
     "all": ("common", "uncommon", "rare"),

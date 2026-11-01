@@ -223,7 +223,7 @@ class TestFitFromImage:
     def test_flat_colours_map_to_their_nearest_palette_colour(self, red_blue_image):
         canvas = Canvas(1)
         canvas.fit_from_image(red_blue_image)
-        available = canvas.store.available_bricks
+        available = canvas.store.palette("buyable")
         palette = np.array([brick.color for brick in available])
 
         def nearest(rgb: tuple[int, int, int]) -> int:
