@@ -182,7 +182,8 @@ and 3068), or round 1x1 tiles (98138). Plates with studs are only used hidden, u
 ## 3D view
 
 Each style in the web app has a "Vue 3D" button: drag to turn the mosaic, scroll to zoom, double-click to
-go back to the start. It draws every piece with [Three.js](https://threejs.org) (MIT), kept in `web/assets/vendor`
+go back to the start. Buttons show the back, with its hangers, and an exploded view with the pins
+between panels. The frame and the back are simplified. It draws every piece with [Three.js](https://threejs.org) (MIT), kept in `web/assets/vendor`
 so that it works offline.
 
 ## Pricing

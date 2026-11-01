@@ -26,6 +26,8 @@ MODEL_SHA256 = "01aa7a23de3f4a0ee1a2bb9997e6918104c85a9f95dea46d27b9b3fb0c6b9001
 # Environment variable naming where to keep the model, overriding ~/.cache/studify.
 CACHE_ENV = "STUDIFY_CACHE"
 DOWNLOAD_TIMEOUT_SECONDS = 60
+MODEL_BYTES = 27258801
+_CHUNK_BYTES = 256 * 1024
 
 # What the model expects: its longest side this size, both sides multiples of its patch.
 INPUT_SIZE = 518
@@ -48,6 +50,7 @@ _RECENT_DEPTHS = 4
 _lock = threading.Lock()
 _session = None
 _depths: dict[str, np.ndarray] = {}
+_downloaded: int | None = None  # Bytes so far, while the model is downloading.
 
 
 class DepthError(RuntimeError):
@@ -59,18 +62,35 @@ def model_path() -> Path:
     return Path(os.environ.get(CACHE_ENV) or Path.home() / ".cache" / "studify") / "depth-anything-v2-small-int8.onnx"
 
 
+def download_progress() -> tuple[int, int] | None:
+    """Return (bytes so far, bytes in all) while the model is downloading, else None."""
+    return None if _downloaded is None else (_downloaded, MODEL_BYTES)
+
+
 def _download(target: Path) -> None:
     """Download the model, keeping it only if it is exactly the expected file."""
+    global _downloaded
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_suffix(".partial")
+    digest = hashlib.sha256()
+    _downloaded = 0
     try:
-        with urllib.request.urlopen(MODEL_URL, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
-            data = response.read()
+        with (
+            urllib.request.urlopen(MODEL_URL, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response,
+            partial.open("wb") as file,
+        ):
+            while chunk := response.read(_CHUNK_BYTES):
+                file.write(chunk)
+                digest.update(chunk)
+                _downloaded += len(chunk)
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        partial.unlink(missing_ok=True)
         raise DepthError(f"Could not download the depth model: {exc}") from exc
-    if hashlib.sha256(data).hexdigest() != MODEL_SHA256:
+    finally:
+        _downloaded = None
+    if digest.hexdigest() != MODEL_SHA256:
+        partial.unlink(missing_ok=True)
         raise DepthError("The depth model that was downloaded isn't the expected file.")
-    partial.write_bytes(data)
     partial.replace(target)
 
 

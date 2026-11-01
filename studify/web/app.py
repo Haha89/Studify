@@ -398,6 +398,9 @@ def _layout() -> dmc.MantineProvider:
                     align="flex-start",
                 ),
                 dmc.Group(dmc.Button("Générer les styles", id="generate", size="md", disabled=True), mt="sm"),
+                html.Div(id="depth-status", className="status"),
+                # Only runs while the styles are being made.
+                dcc.Interval(id="depth-poll", interval=1000, disabled=True),
             ],
             gap="lg",
         ),
@@ -458,7 +461,8 @@ def _layout() -> dmc.MantineProvider:
                 dmc.Modal(
                     [
                         dmc.Text(
-                            "Glisse pour tourner, molette pour zoomer, double-clic pour revenir au départ.",
+                            "Glisse pour tourner, molette ou deux doigts pour zoomer, double-clic pour revenir. "
+                            "Cadre et pièces du dos simplifiés.",
                             c="dimmed",
                             size="xs",
                             mb="sm",
@@ -791,7 +795,7 @@ def create_app() -> Dash:
         State("mode", "value"),
         State("assembly", "value"),
         State("sharp", "checked"),
-        running=[(Output("generate", "loading"), True, False)],
+        running=[(Output("generate", "loading"), True, False), (Output("depth-poll", "disabled"), False, True)],
         prevent_initial_call=True,
     )
     def generate_styles(
@@ -899,6 +903,27 @@ def create_app() -> Dash:
         if settings.get("relief") in ("stepped", "depth"):
             note += " Le sujet est surélevé sur des plaques noires cachées."
         return True, f"{service.STYLE_LABELS[style]} : rendu réaliste", url, f"{note} Clique sur l'image pour zoomer."
+
+    @app.callback(
+        Output("depth-status", "children"),
+        Input("depth-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def show_depth_download(_ticks):
+        message = service.depth_download_message()
+        return dmc.Text(message, c="dimmed", size="sm") if message else ""
+
+    # The last tick may come before the end of the download: clear what it left.
+    app.clientside_callback(
+        """
+        function (disabled) {
+            return disabled ? "" : window.dash_clientside.no_update;
+        }
+        """,
+        Output("depth-status", "children", allow_duplicate=True),
+        Input("depth-poll", "disabled"),
+        prevent_initial_call=True,
+    )
 
     @app.server.route("/model/<session_id>/<style>.json")
     def serve_model(session_id, style):

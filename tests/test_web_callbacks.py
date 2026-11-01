@@ -313,6 +313,17 @@ class TestModes:
         assert built["settings"]["data"]["relief"] == "stepped"
 
 
+class TestDepthDownload:
+    def test_shows_the_progress_while_downloading(self, fire, monkeypatch):
+        monkeypatch.setattr(depth, "_downloaded", 5 * 10**6)
+        out = fire("show_depth_download", [3], "depth-poll.n_intervals")
+        assert "5 / 27 Mo" in str(out["depth-status"]["children"])
+
+    def test_shows_nothing_the_rest_of_the_time(self, fire):
+        out = fire("show_depth_download", [3], "depth-poll.n_intervals")
+        assert out["depth-status"]["children"] == ""
+
+
 class TestDepthMode:
     def test_uses_the_model_and_only_plates_underneath(self, fire, source, monkeypatch):
         monkeypatch.setattr(depth, "estimate_depth", lambda rgb: np.full(rgb.shape[:2], 1.0, dtype=np.float32))

@@ -111,7 +111,12 @@ class TestModel:
             def __exit__(self, *args):
                 return False
 
-            def read(self):
+            sent = False
+
+            def read(self, size):
+                if self.sent:
+                    return b""
+                self.sent = True
                 return b"not a model"
 
         monkeypatch.setattr(depth.urllib.request, "urlopen", lambda *args, **kwargs: Response())
@@ -119,6 +124,30 @@ class TestModel:
         with pytest.raises(depth.DepthError):
             depth._download(target)
         assert not target.exists()
+        assert not target.with_suffix(".partial").exists()
+
+    def test_progress_is_reported_during_the_download_only(self, tmp_path, monkeypatch):
+        seen = []
+
+        class Response:
+            chunks = [b"abc", b"de"]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, size):
+                seen.append(depth.download_progress())
+                return self.chunks.pop(0) if self.chunks else b""
+
+        monkeypatch.setattr(depth.urllib.request, "urlopen", lambda *args, **kwargs: Response())
+        assert depth.download_progress() is None
+        with pytest.raises(depth.DepthError):
+            depth._download(tmp_path / "model.onnx")  # Not the real file, so refused at the end.
+        assert seen == [(0, depth.MODEL_BYTES), (3, depth.MODEL_BYTES), (5, depth.MODEL_BYTES)]
+        assert depth.download_progress() is None
 
     def test_a_failed_download_says_so(self, tmp_path, monkeypatch):
         def fail(*args, **kwargs):

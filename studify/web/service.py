@@ -29,7 +29,7 @@ import numpy as np
 from studify.models.assembly import DEFAULT_ASSEMBLY
 from studify.models.bricklink import ROUND_TILE, wanted_list_xml
 from studify.models.canvas import DEFAULT_FRAME_COLOR
-from studify.models.depth import DepthError
+from studify.models.depth import DepthError, download_progress
 from studify.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
 from studify.models.plates import PLATE_SIZES
 from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
@@ -282,6 +282,18 @@ def bricklink_download(name: str, style: str, wanted_list: str) -> dict[str, str
         "filename": f"studify-{_safe_stem(name)}-{style}-bricklink.xml",
         "type": "application/xml",
     }
+
+
+def depth_download_message() -> str:
+    """What to show while the depth model downloads: nothing the rest of the time."""
+    progress = download_progress()
+    if progress is None:
+        return ""
+    done, total = progress
+    return (
+        f"Téléchargement du modèle de profondeur, une seule fois : "
+        f"{done / 10**6:.0f} / {total / 10**6:.0f} Mo. Les styles suivront."
+    )
 
 
 def render_styles(

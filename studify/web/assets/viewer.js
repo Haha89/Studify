@@ -8,15 +8,30 @@ window.studifyViewer = (function () {
     const SEAM = 0.03; // Gap between plates, so that each one shows.
     const BASEPLATE_COLOR = 0x202226;
     const SUPPORT_COLOR = 0x05131d; // LEGO Black, like the hidden plates' real colour.
+    // Black too in the parts list, but lighter here, or they wouldn't show against the panels.
+    const HANGER_COLOR = 0x79808a;
+    const BACK_PART_COLOR = 0x444a53;
+    const PIN_COLOR = 0x9aa1ab;
     const START_TILT = 0.6; // Radians away from straight on.
     const START_TURN = -0.35;
-    const MAX_TILT = 1.45;
+    const MIN_TILT = 0.02;
+    const MAX_TILT = Math.PI - 0.02; // Past halfway round, the camera is behind the mosaic.
     const LARGE_MOSAIC = 96; // Studs along the longest side.
+    const BASEPLATE_STUDS = 32;
     const PANEL_STUDS = 16;
     const PANEL_HEIGHT = 1.6; // 1 1/3 bricks.
     const FRAME_WIDTH = 1;
     const FRAME_BELOW = PANEL_HEIGHT + PLATE_HEIGHT; // Down to the plates under the panels' edge.
     const FRAME_ABOVE = 1.6; // A course of bricks and its tiles.
+    const EXPLODED_GAP = 5; // Studs between parts in the exploded view.
+    const EXPLODED_ZOOM = 1.45;
+    const PINS_PER_JOIN = 3;
+    const PIN_RADIUS = 0.24;
+    const SPACER_STUDS = 2; // The plate on the back of each panel.
+    const CROSSING_STUDS = 2; // The plate where four panels meet.
+    const HANGER_WIDTH = 5;
+    const HANGER_DEPTH = 3;
+    const HANGER_HEIGHT = 0.8;
 
     let current = null;
     let request = 0; // Lets a slow load notice that it has been replaced.
@@ -65,73 +80,165 @@ window.studifyViewer = (function () {
         return mesh;
     }
 
-    function panelsAndFrame(THREE, scene, box, rows, cols, place) {
-        // The panels under the mosaic, then its brick frame, simplified to one solid course
-        // per panel length. The back, its pins and its hangers don't show from the front.
-        const panels = [];
-        for (let row = 0; row < rows; row += PANEL_STUDS) {
-            for (let col = 0; col < cols; col += PANEL_STUDS) {
-                panels.push([col + PANEL_STUDS / 2, row + PANEL_STUDS / 2]);
-            }
-        }
-        const lengths = [];
-        const middle = (FRAME_ABOVE - FRAME_BELOW) / 2;
-        const height = FRAME_ABOVE + FRAME_BELOW;
-        const along = function (start, end, fixed, across) {
-            for (let from = start; from < end; from += PANEL_STUDS) {
-                const to = Math.min(from + PANEL_STUDS, end);
-                lengths.push(across ? [fixed, (from + to) / 2, FRAME_WIDTH, to - from] : [(from + to) / 2, fixed, to - from, FRAME_WIDTH]);
-            }
-        };
-        const half = FRAME_WIDTH / 2;
-        // Top and bottom run the whole width; the sides fit between them.
-        along(-FRAME_WIDTH, cols + FRAME_WIDTH, -half, false);
-        along(-FRAME_WIDTH, cols + FRAME_WIDTH, rows + half, false);
-        along(0, rows, -half, true);
-        along(0, rows, cols + half, true);
-
-        return [
-            instances(THREE, scene, box, panels.length, true, function (i, matrix, color) {
-                const [x, z] = panels[i];
-                place(matrix, x, -PANEL_HEIGHT / 2, z, PANEL_STUDS - SEAM, PANEL_HEIGHT, PANEL_STUDS - SEAM);
-                color.set(SUPPORT_COLOR);
-            }),
-            instances(THREE, scene, box, lengths.length, true, function (i, matrix, color) {
-                const [x, z, wide, deep] = lengths[i];
-                place(matrix, x, middle, z, wide - SEAM, height, deep - SEAM);
-                color.set(SUPPORT_COLOR);
-            }),
-        ];
+    function boxes(THREE, scene, box, place, list, hexColor) {
+        // Each item is [x, y, z, width, height, depth], in studs, before any exploding.
+        return instances(THREE, scene, box, list.length, true, function (i, matrix, color) {
+            place(matrix, ...list[i]);
+            color.set(hexColor);
+        });
     }
 
-    function buildScene(THREE, data) {
+    function panelsAndFrame(THREE, scene, box, geometry, place) {
+        // The panels under the mosaic and what is on their back, then the brick frame,
+        // simplified to one solid course per panel length.
+        const {rows, cols, gap, exploded} = geometry;
+        const panels = [];
+        const spacers = [];
+        const y = -PANEL_HEIGHT / 2;
+        const backY = -PANEL_HEIGHT - PLATE_HEIGHT / 2;
+        for (let row = 0; row < rows; row += PANEL_STUDS) {
+            for (let col = 0; col < cols; col += PANEL_STUDS) {
+                const x = col + PANEL_STUDS / 2;
+                const z = row + PANEL_STUDS / 2;
+                panels.push([x, y, z, PANEL_STUDS - SEAM, PANEL_HEIGHT, PANEL_STUDS - SEAM]);
+                spacers.push([x, backY, z, SPACER_STUDS, PLATE_HEIGHT, SPACER_STUDS]);
+            }
+        }
+
+        const frame = [];
+        const middle = (FRAME_ABOVE - FRAME_BELOW) / 2;
+        const height = FRAME_ABOVE + FRAME_BELOW;
+        const half = FRAME_WIDTH / 2;
+        for (let col = 0; col < cols; col += PANEL_STUDS) {
+            const x = col + PANEL_STUDS / 2;
+            frame.push([x, middle, -half, PANEL_STUDS - SEAM, height, FRAME_WIDTH]);
+            frame.push([x, middle, rows + half, PANEL_STUDS - SEAM, height, FRAME_WIDTH]);
+        }
+        for (let row = 0; row < rows; row += PANEL_STUDS) {
+            const z = row + PANEL_STUDS / 2;
+            frame.push([-half, middle, z, FRAME_WIDTH, height, PANEL_STUDS - SEAM]);
+            frame.push([cols + half, middle, z, FRAME_WIDTH, height, PANEL_STUDS - SEAM]);
+        }
+        for (const x of [-half, cols + half]) {
+            for (const z of [-half, rows + half]) {
+                frame.push([x, middle, z, FRAME_WIDTH, height, FRAME_WIDTH]);
+            }
+        }
+
+        // Two hangers on the top row, at a quarter and three quarters of the way across.
+        const hangers = [0.25, 0.75].map(function (share) {
+            const x = Math.floor((cols * share) / PANEL_STUDS) * PANEL_STUDS + PANEL_STUDS / 2;
+            const z = HANGER_DEPTH;
+            return [x, -PANEL_HEIGHT - HANGER_HEIGHT / 2, z, HANGER_WIDTH, HANGER_HEIGHT, HANGER_DEPTH];
+        });
+
+        const meshes = [
+            boxes(THREE, scene, box, place, panels, SUPPORT_COLOR),
+            boxes(THREE, scene, box, place, spacers, BACK_PART_COLOR),
+            boxes(THREE, scene, box, place, frame, SUPPORT_COLOR),
+            boxes(THREE, scene, box, place, hangers, HANGER_COLOR),
+        ];
+
+        if (!exploded) {
+            // These straddle four panels, so have nowhere to sit once they're apart.
+            const crossings = [];
+            for (let row = PANEL_STUDS; row < rows; row += PANEL_STUDS) {
+                for (let col = PANEL_STUDS; col < cols; col += PANEL_STUDS) {
+                    crossings.push([col, backY, row, CROSSING_STUDS, PLATE_HEIGHT, CROSSING_STUDS]);
+                }
+            }
+            if (crossings.length) {
+                meshes.push(boxes(THREE, scene, box, place, crossings, BACK_PART_COLOR));
+            }
+            return {meshes, extras: []};
+        }
+
+        // Pins sit inside the panels' sides, so only show when the panels are apart.
+        const across = cols / PANEL_STUDS;
+        const down = rows / PANEL_STUDS;
+        const pins = [];
+        const pinOffsets = [-PANEL_STUDS / 4, 0, PANEL_STUDS / 4];
+        for (let c = 0; c < across; c++) {
+            for (let r = 0; r < down; r++) {
+                const x = c * (PANEL_STUDS + gap) + PANEL_STUDS / 2;
+                const z = r * (PANEL_STUDS + gap) + PANEL_STUDS / 2;
+                for (let n = 0; n < PINS_PER_JOIN; n++) {
+                    if (c + 1 < across) {
+                        pins.push({x: x + PANEL_STUDS / 2 + gap / 2, z: z + pinOffsets[n], alongX: true});
+                    }
+                    if (r + 1 < down) {
+                        pins.push({x: x + pinOffsets[n], z: z + PANEL_STUDS / 2 + gap / 2, alongX: false});
+                    }
+                }
+            }
+        }
+        if (!pins.length) {
+            return {meshes, extras: []};
+        }
+        const pinGeometry = new THREE.CylinderGeometry(PIN_RADIUS, PIN_RADIUS, gap + 2, 10);
+        const alongX = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2));
+        const alongZ = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+        const unit = new THREE.Vector3(1, 1, 1);
+        const left = (across * PANEL_STUDS + (across - 1) * gap) / 2;
+        const far = (down * PANEL_STUDS + (down - 1) * gap) / 2;
+        meshes.push(
+            instances(THREE, scene, pinGeometry, pins.length, true, function (i, matrix, color) {
+                const pin = pins[i];
+                matrix.compose(new THREE.Vector3(pin.x - left, y, pin.z - far), pin.alongX ? alongX : alongZ, unit);
+                color.set(PIN_COLOR);
+            })
+        );
+        return {meshes, extras: [pinGeometry]};
+    }
+
+    function buildScene(THREE, data, exploded) {
         const {rows, cols, palette, colors, heights, regions, plates, supports} = data;
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xeef0f3);
+        const onPanels = data.assembly === "panels";
+        const cell = onPanels ? PANEL_STUDS : BASEPLATE_STUDS;
+        const gap = exploded ? EXPLODED_GAP : 0;
+        // Each panel or baseplate moves away from the middle as one, with what is on it.
+        const moved = (value) => value + gap * Math.floor(value / cell);
+        const width = cols + gap * (Math.ceil(cols / cell) - 1);
+        const depth = rows + gap * (Math.ceil(rows / cell) - 1);
         const stud = (row, col) => row * cols + col;
         const hex = (row, col) => palette[colors[stud(row, col)]];
-        const position = (x, y, z) => new THREE.Vector3(x - cols / 2, y, z - rows / 2);
+        const position = (x, y, z) => new THREE.Vector3(moved(x) - width / 2, y, moved(z) - depth / 2);
         const noTurn = new THREE.Quaternion();
         const box = new THREE.BoxGeometry(1, 1, 1);
         const parts = [box];
 
         const plateCount = plates.length / 4;
-        const place = (matrix, x, y, z, width, height, depth) =>
-            matrix.compose(position(x, y, z), noTurn, new THREE.Vector3(width, height, depth));
+        const place = (matrix, x, y, z, wide, tall, deep) =>
+            matrix.compose(position(x, y, z), noTurn, new THREE.Vector3(wide, tall, deep));
 
         const meshes = [];
-        if (data.assembly === "panels") {
-            meshes.push(...panelsAndFrame(THREE, scene, box, rows, cols, place));
-        } else {
-            const baseplate = new THREE.Mesh(
+        if (onPanels) {
+            const {meshes: under, extras} = panelsAndFrame(
+                THREE,
+                scene,
                 box,
-                new THREE.MeshStandardMaterial({color: BASEPLATE_COLOR, roughness: 0.6})
+                {rows, cols, gap, exploded},
+                place
             );
-            baseplate.scale.set(cols, PLATE_HEIGHT, rows);
-            baseplate.position.y = -PLATE_HEIGHT / 2;
-            baseplate.receiveShadow = true;
-            scene.add(baseplate);
-            parts.push(baseplate.material);
+            meshes.push(...under);
+            parts.push(...extras);
+        } else {
+            const baseplates = [];
+            for (let row = 0; row < rows; row += BASEPLATE_STUDS) {
+                for (let col = 0; col < cols; col += BASEPLATE_STUDS) {
+                    baseplates.push([
+                        col + BASEPLATE_STUDS / 2,
+                        -PLATE_HEIGHT / 2,
+                        row + BASEPLATE_STUDS / 2,
+                        BASEPLATE_STUDS - SEAM,
+                        PLATE_HEIGHT,
+                        BASEPLATE_STUDS - SEAM,
+                    ]);
+                }
+            }
+            meshes.push(boxes(THREE, scene, box, place, baseplates, BASEPLATE_COLOR));
         }
 
         meshes.push(
@@ -184,18 +291,23 @@ window.studifyViewer = (function () {
     }
 
     function open(THREE, stage, data) {
-        const {scene, meshes, parts} = buildScene(THREE, data);
         const span = Math.max(data.rows, data.cols);
 
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 1.5));
+        const sky = new THREE.HemisphereLight(0xffffff, 0xc4c8d0, 1.5);
         const sun = new THREE.DirectionalLight(0xffffff, 2.2);
         sun.position.set(-span * 0.6, span * 0.9, -span * 0.6);
         sun.castShadow = true;
-        sun.shadow.camera.left = sun.shadow.camera.bottom = -span * 0.8;
-        sun.shadow.camera.right = sun.shadow.camera.top = span * 0.8;
+        // Wide enough for the exploded view too.
+        sun.shadow.camera.left = sun.shadow.camera.bottom = -span * 1.1;
+        sun.shadow.camera.right = sun.shadow.camera.top = span * 1.1;
         sun.shadow.camera.far = span * 3;
         sun.shadow.bias = -0.0005;
-        scene.add(sun);
+        // Lights the back, which the sun never reaches.
+        const fill = new THREE.DirectionalLight(0xffffff, 2.2);
+        fill.position.set(span * 0.4, -span, span * 0.4);
+
+        let built = buildScene(THREE, data, false);
+        built.scene.add(sky, sun, fill);
 
         const renderer = new THREE.WebGLRenderer({antialias: true});
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -208,7 +320,7 @@ window.studifyViewer = (function () {
 
         const camera = new THREE.PerspectiveCamera(35, 1, 0.5, span * 12);
         const startDistance = span * 2.2;
-        const view = {tilt: START_TILT, turn: START_TURN, distance: startDistance};
+        const view = {tilt: START_TILT, turn: START_TURN, distance: startDistance, exploded: false};
 
         let drawPending = false;
         const draw = function () {
@@ -225,7 +337,7 @@ window.studifyViewer = (function () {
                     Math.cos(view.turn) * flat
                 );
                 camera.lookAt(0, 0, 0);
-                renderer.render(scene, camera);
+                renderer.render(built.scene, camera);
             });
         };
 
@@ -242,35 +354,103 @@ window.studifyViewer = (function () {
         const observer = new ResizeObserver(resize);
         observer.observe(stage);
 
+        const freeBuilt = function () {
+            built.meshes.forEach(function (mesh) {
+                mesh.material.dispose();
+                mesh.dispose();
+            });
+            built.parts.forEach(function (part) {
+                part.dispose();
+            });
+        };
+
+        const look = function (settings) {
+            if (settings.exploded !== undefined && settings.exploded !== view.exploded) {
+                view.exploded = settings.exploded;
+                freeBuilt();
+                built = buildScene(THREE, data, view.exploded);
+                built.scene.add(sky, sun, fill);
+                renderer.shadowMap.needsUpdate = true;
+            }
+            for (const key of ["tilt", "turn", "distance"]) {
+                if (settings[key] !== undefined) {
+                    view[key] = settings[key];
+                }
+            }
+            draw();
+        };
+        const front = () => ({tilt: START_TILT, turn: START_TURN, distance: startDistance});
+        // From behind, with the top of the picture and its hangers still at the top.
+        const back = () => ({tilt: Math.PI - START_TILT, turn: Math.PI - START_TURN, distance: startDistance});
+
+        const zoomBy = function (factor) {
+            view.distance = Math.min(span * 5, Math.max(span * 0.15, view.distance * factor));
+            draw();
+        };
+
+        const controls = document.createElement("div");
+        controls.className = "viewer-controls";
+        const button = function (label, onClick) {
+            const element = document.createElement("button");
+            element.type = "button";
+            element.textContent = label;
+            element.addEventListener("click", onClick);
+            controls.appendChild(element);
+            return element;
+        };
+        button("Face", () => look(front()));
+        button("Dos", () => look(back()));
+        const apart = button("Vue éclatée", function () {
+            // Stand back to keep the parts in view as they spread.
+            const distance = view.distance * (view.exploded ? 1 / EXPLODED_ZOOM : EXPLODED_ZOOM);
+            look({exploded: !view.exploded, distance});
+            apart.setAttribute("aria-pressed", String(view.exploded));
+        });
+        apart.setAttribute("aria-pressed", "false");
+        stage.appendChild(controls);
+
         const canvas = renderer.domElement;
-        let last = null;
+        // Every finger or mouse button on the canvas: one turns, two pinch to zoom.
+        const pointers = new Map();
+        const spread = function () {
+            const [a, b] = pointers.values();
+            return Math.hypot(a.x - b.x, a.y - b.y);
+        };
         const down = function (event) {
-            last = {x: event.clientX, y: event.clientY};
+            pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
             canvas.setPointerCapture(event.pointerId);
             canvas.classList.add("dragging");
         };
         const move = function (event) {
+            const last = pointers.get(event.pointerId);
             if (!last) {
                 return;
             }
+            if (pointers.size === 2) {
+                const before = spread();
+                pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+                const after = spread();
+                if (before && after) {
+                    zoomBy(before / after);
+                }
+                return;
+            }
             view.turn -= (event.clientX - last.x) * 0.006;
-            view.tilt = Math.min(MAX_TILT, Math.max(0.02, view.tilt - (event.clientY - last.y) * 0.006));
-            last = {x: event.clientX, y: event.clientY};
+            view.tilt = Math.min(MAX_TILT, Math.max(MIN_TILT, view.tilt - (event.clientY - last.y) * 0.006));
+            pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
             draw();
         };
-        const up = function () {
-            last = null;
-            canvas.classList.remove("dragging");
+        const up = function (event) {
+            pointers.delete(event.pointerId);
+            if (!pointers.size) {
+                canvas.classList.remove("dragging");
+            }
         };
         const wheel = function (event) {
             event.preventDefault();
-            view.distance = Math.min(span * 5, Math.max(span * 0.15, view.distance * Math.exp(event.deltaY * 0.001)));
-            draw();
+            zoomBy(Math.exp(event.deltaY * 0.001));
         };
-        const reset = function () {
-            Object.assign(view, {tilt: START_TILT, turn: START_TURN, distance: startDistance});
-            draw();
-        };
+        const reset = () => look(front());
         canvas.addEventListener("pointerdown", down);
         canvas.addEventListener("pointermove", move);
         canvas.addEventListener("pointerup", up);
@@ -281,19 +461,16 @@ window.studifyViewer = (function () {
 
         return {
             view,
-            draw,
+            look,
+            front,
+            back,
             dispose: function () {
                 observer.disconnect();
-                meshes.forEach(function (mesh) {
-                    mesh.material.dispose();
-                    mesh.dispose();
-                });
-                parts.forEach(function (part) {
-                    part.dispose();
-                });
+                freeBuilt();
                 sun.shadow.dispose();
                 renderer.dispose();
                 renderer.forceContextLoss();
+                controls.remove();
                 canvas.remove();
             },
         };
@@ -337,6 +514,11 @@ window.studifyViewer = (function () {
         hide,
         state: function () {
             return current && current.view;
+        },
+        look: function (settings) {
+            if (current) {
+                current.look(settings);
+            }
         },
     };
 })();

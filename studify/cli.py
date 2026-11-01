@@ -5,7 +5,8 @@ from pathlib import Path
 
 from studify.export.labels import LABELS
 from studify.models.brickstore import BrickStore
-from studify.models.depth import DepthError
+from studify.models.depth import MODEL_BYTES, DepthError
+from studify.models.depth import model_path as depth_model_path
 from studify.models.plates import PLATE_SIZES, plate_sizes
 from studify.models.static import DIM_BASE
 from studify.models.style import STYLES
@@ -181,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             parser.error(str(exc))
 
+    if args.relief == "depth" and not depth_model_path().is_file():
+        print(f"Downloading the depth model ({MODEL_BYTES // 10**6} MB), just this once...")
     try:
         process(
             size=args.size,
