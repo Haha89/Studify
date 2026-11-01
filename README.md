@@ -113,6 +113,8 @@ are in French. Uploads are stored at 2000 pixels at most on the longest side.
 PDFs are printed by a headless Chrome, Chromium or Edge; set `STUDIFY_BROWSER` to point at
 one if it isn't found automatically.
 
+<img src="docs/images/web-app.png" width="700" alt="The web app comparing natural, pop-art and comic renders of a mountain lake, with prices and download buttons">
+
 ### As a library
 
 ```python
