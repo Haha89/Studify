@@ -1,9 +1,10 @@
 """Give a mosaic depth: find the picture's subject and raise it above the background.
 
-Two choices, in ``RELIEFS``:
+Three choices, in ``RELIEFS``:
 
 - "flat": every piece at the same height.
 - "stepped": the subject stands on stacks of hidden plates, its core higher still.
+- "depth": stacks follow how near each part of the picture looks (see ``depth``).
 
 The subject comes from GrabCut, part of OpenCV, so nothing has to be downloaded. It can
 be wrong: an implausible subject falls back to an ellipse in the middle of the picture.
@@ -21,7 +22,7 @@ from studify.models.bricklink import ROUND_TILE
 from studify.models.plates import PLATE_SIZES, Plate, count_parts, pack_baseplates, plate_regions
 from studify.models.static import COLORS, DIM_BASE
 
-RELIEFS = ("flat", "stepped")
+RELIEFS = ("flat", "stepped", "depth")
 DEFAULT_RELIEF = "flat"
 
 BACKGROUND, SUBJECT, CORE = 0, 1, 2

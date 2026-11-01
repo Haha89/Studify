@@ -61,6 +61,9 @@ LABELS = {
         },
         "stepped_note": "Relief: the subject stands on hidden black plates, its centre higher still. Build each "
         "baseplate's support layers first, from the lowest up. Untested with real bricks: check it holds and hangs.",
+        "depth_note": "Relief: hidden black plates raise each part of the picture according to how near a model "
+        "guessed it is. Build each baseplate's hidden layers first, from the lowest up. Untested with real bricks: "
+        "check it holds and hangs.",
         "support_plates": "Hidden plates",
         "support_layer": "{base} - hidden layer {layer} of {total}",
         "support_mark": "S",
@@ -147,6 +150,9 @@ LABELS = {
         "stepped_note": "Relief : le sujet repose sur des plaques noires cachées, son centre plus haut encore. Monte "
         "d'abord les couches cachées de chaque baseplate, de bas en haut. Non testé avec de vraies briques : "
         "vérifie la solidité et la fixation.",
+        "depth_note": "Relief : des plaques noires cachées surélèvent chaque zone selon la distance estimée par un "
+        "modèle. Monte d'abord les couches cachées de chaque baseplate, de bas en haut. Non testé avec de vraies "
+        "briques : vérifie la solidité et la fixation.",
         "support_plates": "Plaques cachées",
         "support_layer": "{base} - couche cachée {layer} sur {total}",
         "support_mark": "S",

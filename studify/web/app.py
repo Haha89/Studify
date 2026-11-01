@@ -22,7 +22,7 @@ from studify.web import service
 SIZES = range(1, 7)  # Baseplates along the longest side.
 FRAMES = range(0, 5)  # Frame width in studs.
 FRAME_COLOR_CHOICES = [("Noir", "black"), ("Blanc", "white")]
-MODE_CHOICES = [("Plat", "flat"), ("Tuiles rondes", "round"), ("Relief", "relief")]
+MODE_CHOICES = [("Plat", "flat"), ("Tuiles rondes", "round"), ("Relief", "relief"), ("Profondeur", "depth")]
 ASSEMBLY_CHOICES = [("Baseplates", "baseplates"), ("Panneaux LEGO Art", "panels")]
 COLOR_LIMITS = [("Toutes", "0"), ("16", "16"), ("12", "12"), ("8", "8"), ("6", "6")]
 BASEPLATE_CHOICES = [("Officielles LEGO", "official"), ("Compatibles", "compatible")]
@@ -314,7 +314,10 @@ def _layout() -> dmc.MantineProvider:
                                     "uniquement des tuiles lisses carrées et rectangulaires, le sujet surélevé sur des "
                                     "plaques noires cachées, son centre plus haut encore, avec une carte par couche "
                                     "dans le guide. Le sujet est détecté automatiquement et peut être imprécis ; le "
-                                    "relief n'est pas encore testé avec de vraies briques.",
+                                    "relief n'est pas encore testé avec de vraies briques. "
+                                    "Profondeur : comme Relief, mais un modèle "
+                                    "estime la distance de chaque zone, jusqu'à 4 plaques cachées ; il se "
+                                    "télécharge à la première utilisation (27 Mo).",
                                     c="dimmed",
                                     size="xs",
                                 ),
@@ -824,7 +827,7 @@ def create_app() -> Dash:
             "plates": plates,
             "tinted": bool(tinted),
             "round_tiles": mode == "round",
-            "relief": "stepped" if mode == "relief" else "flat",
+            "relief": {"relief": "stepped", "depth": "depth"}.get(mode, "flat"),
             "assembly": assembly,
             "sharp": bool(sharp),
         }
@@ -893,7 +896,7 @@ def create_app() -> Dash:
             note = "Une tuile ronde par tenon, sur une baseplate sombre."
         else:
             note = "Tuiles lisses, carrées et rectangulaires, comme dans le guide et la liste BrickLink."
-        if settings.get("relief") == "stepped":
+        if settings.get("relief") in ("stepped", "depth"):
             note += " Le sujet est surélevé sur des plaques noires cachées."
         return True, f"{service.STYLE_LABELS[style]} : rendu réaliste", url, f"{note} Clique sur l'image pour zoomer."
 

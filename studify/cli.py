@@ -5,6 +5,7 @@ from pathlib import Path
 
 from studify.export.labels import LABELS
 from studify.models.brickstore import BrickStore
+from studify.models.depth import DepthError
 from studify.models.plates import PLATE_SIZES, plate_sizes
 from studify.models.static import DIM_BASE
 from studify.models.style import STYLES
@@ -102,10 +103,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--relief",
-        choices=["flat", "stepped"],
+        choices=["flat", "stepped", "depth"],
         default="flat",
-        help="Depth: flat (default) or stepped (subject raised on hidden plates, its core "
-        "higher still). Stepped is built from plates, so not with --round-tiles.",
+        help="Depth: flat (default), stepped (subject raised on hidden plates, its core higher "
+        "still) or depth (stacks following how near each part looks, guessed by a model downloaded "
+        "on first use, 27 MB, needs uv sync --extra depth). Not with --round-tiles.",
     )
     parser.add_argument(
         "--assembly",
@@ -162,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.image is None:
         parser.error("the following arguments are required: image (or pass --gui)")
     if args.round_tiles and args.relief != "flat":
-        parser.error("--relief stepped is built from plates, so can't be used with --round-tiles")
+        parser.error("--relief is built on stacks of plates, so can't be used with --round-tiles")
     if args.size < 1:
         parser.error("--size must be at least 1")
     if not 0 <= args.frame < DIM_BASE // 2:
@@ -206,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
             lang=args.lang,
             clean_strays=not args.keep_strays,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, DepthError) as exc:
         parser.error(str(exc))
     return 0
 

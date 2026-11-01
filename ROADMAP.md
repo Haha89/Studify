@@ -22,7 +22,7 @@ it is based on a few listings for black parts only.
 
 ## Relief
 
-`--relief stepped` hasn't met real bricks. Build a small one to check that the stacks hold,
+`--relief stepped` and `depth` haven't met real bricks. Build a small one to check that the stacks hold,
 how they attach across baseplates (plates stay within theirs, so nothing bridges two), and
 how it hangs. Then consider letting users correct the detected subject, gold and silver
 accents, and side builds for the raised parts.

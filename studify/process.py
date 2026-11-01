@@ -61,12 +61,13 @@ def build_canvas(
     :param clean_strays: Merge isolated bricks into their surroundings.
     :param round_tiles: Build from round 1x1 tiles, so only draw from the colours they
         come in. Colours given by hand in ``colors`` are still used as they are.
-    :param relief: How to give the mosaic depth, from ``relief.RELIEFS``. A stepped
-        relief is built from plates, so not with ``round_tiles``.
+    :param relief: How to give the mosaic depth, from ``relief.RELIEFS``. A relief
+        stands on stacks of plates, so not with ``round_tiles``.
     :param assembly: What it is built on, from ``assembly.ASSEMBLIES``.
     :param sharp: Keep edges between colours sharp, for logos and flat graphics (see
         ``Canvas.fit_from_image``). Not with ``dither``.
-    :raises ValueError: asking for both round tiles and a stepped relief.
+    :raises ValueError: asking for both round tiles and a relief.
+    :raises depth.DepthError: if a depth relief's model can't be run.
     :return: The fitted canvas.
     """
     if round_tiles and relief != DEFAULT_RELIEF:

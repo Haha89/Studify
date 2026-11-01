@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from studify.models import depth
 from studify.models.assembly import ASSEMBLIES, DEFAULT_ASSEMBLY, PANEL_STUDS, assembly_parts
 from studify.models.brick import Brick
 from studify.models.bricklink import round_tile_parts
@@ -73,7 +74,8 @@ class Canvas:
             raise ValueError(f"frame must be between 0 and {DIM_BASE // 2 - 1} studs, got {frame}")
         self.frame = frame
         self.relief = DEFAULT_RELIEF
-        self.levels: np.ndarray | None = None  # Subject and face grid, set by fit_from_image.
+        # Subject and core grid, or plates per stud for a depth relief. Set by fit_from_image.
+        self.levels: np.ndarray | None = None
         # (top, bottom, left, right) of the picture itself within the last resized
         # image, excluding letterbox bars and frame. Set by resize_img.
         self.content_box: tuple[int, int, int, int] | None = None
@@ -139,6 +141,8 @@ class Canvas:
         tiles = np.zeros(self.shape, dtype=bool)
         if self.relief == "stepped":
             heights = STEPPED_PLATES[self.levels]
+        elif self.relief == "depth":
+            heights = self.levels
         if round_tiles:
             tiles = ~self.border_mask()
             sizes = BORDER_SIZES
@@ -355,6 +359,7 @@ class Canvas:
         self.source_path = Path(path)
         self.source = self.source_path.stem
         src = cv2.cvtColor(src, cv2.COLOR_BGR2RGB)
+        original = src
         if style is not None:
             src = retouch(src, style)
         resized = self.resize_img(src)
@@ -391,6 +396,11 @@ class Canvas:
 
         self.relief = relief
         self.levels = np.full((rows, cols), BACKGROUND, dtype=int)
-        if relief != "flat":
+        if relief == "depth":
+            # From the untouched picture: retouching flattens what the model reads depth from.
+            near = cv2.resize(depth.estimate_depth(original), (src.shape[1], src.shape[0]))
+            top, bottom, left, right = self.content_box
+            self.levels[top:bottom, left:right] = depth.depth_heights(self.resize_img(near)[top:bottom, left:right])
+        elif relief == "stepped":
             top, bottom, left, right = self.content_box
             self.levels[top:bottom, left:right] = subject_levels(resized[top:bottom, left:right])

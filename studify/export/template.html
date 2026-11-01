@@ -43,6 +43,7 @@
         {% if total_plates %}<br>{{ t.plates_note }}{% endif %}
         {% if round_tiles %}<br>{{ t.round_note }}{% if not assembly.panels %} {{ t.round_base_note }}{% endif %}{% endif %}
         {% if relief == "stepped" %}<br>{{ t.stepped_note }}{% endif %}
+        {% if relief == "depth" %}<br>{{ t.depth_note }}{% endif %}
     </p>
     {% if price.rare_colors %}
     <p class="price-warning">

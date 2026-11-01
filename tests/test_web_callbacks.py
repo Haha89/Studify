@@ -12,7 +12,7 @@ import pytest
 
 pytest.importorskip("dash")
 
-from studify.models import pdf_creator  # noqa: E402
+from studify.models import depth, pdf_creator  # noqa: E402
 from studify.web import service  # noqa: E402
 from studify.web.app import create_app  # noqa: E402
 
@@ -120,7 +120,7 @@ def generate(
             plates,
             True,
             frame_color,
-            "round" if round_tiles else "relief" if relief == "stepped" else "flat",
+            "round" if round_tiles else {"stepped": "relief", "depth": "depth"}.get(relief, "flat"),
             assembly,
             sharp,
         ],
@@ -311,6 +311,24 @@ class TestModes:
         assert "plaques cachées" in str(built["styles"]["children"])
         assert built["settings"]["data"]["round_tiles"] is False
         assert built["settings"]["data"]["relief"] == "stepped"
+
+
+class TestDepthMode:
+    def test_uses_the_model_and_only_plates_underneath(self, fire, source, monkeypatch):
+        monkeypatch.setattr(depth, "estimate_depth", lambda rgb: np.full(rgb.shape[:2], 1.0, dtype=np.float32))
+        built = generate(fire, source, relief="depth")
+        assert built["settings"]["data"]["relief"] == "depth"
+        assert "plaques cachées" in str(built["styles"]["children"])
+        assert "98138" not in built["builds"]["data"]["natural"]["wanted_list"]
+
+    def test_says_when_the_model_cant_run(self, fire, source, monkeypatch):
+        def fail(rgb):
+            raise depth.DepthError("no network")
+
+        monkeypatch.setattr(depth, "estimate_depth", fail)
+        built = generate(fire, source, relief="depth")
+        assert "no network" in str(built["styles"]["children"])
+        assert built["settings"]["data"] is None
 
 
 class TestAssembly:

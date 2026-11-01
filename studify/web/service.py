@@ -29,6 +29,7 @@ import numpy as np
 from studify.models.assembly import DEFAULT_ASSEMBLY
 from studify.models.bricklink import ROUND_TILE, wanted_list_xml
 from studify.models.canvas import DEFAULT_FRAME_COLOR
+from studify.models.depth import DepthError
 from studify.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
 from studify.models.plates import PLATE_SIZES
 from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
@@ -310,20 +311,23 @@ def render_styles(
     path = _working_image(session_id, crop)
     results = []
     for style, label in STYLE_LABELS.items():
-        canvas = build_canvas(
-            size,
-            path,
-            frame=frame,
-            frame_color=frame_color,
-            max_colors=max_colors,
-            style=style,
-            palette=palette,
-            dither=dither,
-            round_tiles=round_tiles,
-            relief=relief,
-            assembly=assembly,
-            sharp=sharp,
-        )
+        try:
+            canvas = build_canvas(
+                size,
+                path,
+                frame=frame,
+                frame_color=frame_color,
+                max_colors=max_colors,
+                style=style,
+                palette=palette,
+                dither=dither,
+                round_tiles=round_tiles,
+                relief=relief,
+                assembly=assembly,
+                sharp=sharp,
+            )
+        except DepthError as exc:
+            raise ImageError(f"Relief par profondeur impossible : {exc}") from exc
         rows, cols = canvas.shape
         distribution = canvas.get_distribution()
         layout = canvas.layout(plates, round_tiles)
