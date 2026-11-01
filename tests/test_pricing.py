@@ -12,6 +12,19 @@ def brick(name: str) -> int:
     return NAMES.index(name)
 
 
+def test_parts_are_priced_by_their_size():
+    black = brick("Black")
+    one_by_one = pricing.estimate_price({black: 4}, 0)
+    one_by_four = pricing.estimate_price({black: 4}, 0, parts={(black, "3710"): 1})
+    assert one_by_four.bricks_low == pytest.approx(one_by_one.bricks_low * 1.5 / 4)
+    assert one_by_four.bricks_high == pytest.approx(one_by_one.bricks_high * 1.5 / 4)
+
+
+def test_rare_colours_are_named_whatever_the_parts():
+    rare = brick("Brown")
+    assert pricing.estimate_price({rare: 4}, 0, parts={(rare, "3710"): 1}).rare_colors == {"Brown": 4}
+
+
 def test_every_listed_colour_exists_in_the_palette():
     # A typo here would silently demote a colour to "uncommon".
     assert pricing.COMMON_COLORS.issubset(COLORS)

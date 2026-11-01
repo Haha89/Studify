@@ -37,7 +37,9 @@ def run_gui() -> None:
             status.configure(text=f"Error: {exc}")
             return
         rows, cols = canvas.shape
-        status.configure(text=f"Done: {cols} x {rows} studs, {canvas.get_price().format()}")
+        status.configure(
+            text=f"Done: {cols} x {rows} studs, {canvas.get_price(parts=canvas.get_part_counts()).format()}"
+        )
 
     customtkinter.CTkButton(root, text="Start", command=on_start).grid(row=3, column=1, padx=20, pady=PAD_Y)
     root.mainloop()

@@ -9,7 +9,8 @@ The estimate uses three broad price tiers, giving ranges too wide to plan a purc
 around (e.g. 363–704 €). BrickLink's API could supply real prices per colour, which could
 also steer colour choices towards cheaper bricks. On hold: an API key requires a BrickLink
 seller account. Prices could instead be updated by hand in `models/pricing.py`, from
-BrickLink's public price guide pages.
+BrickLink's public price guide pages. `pricing.PART_PRICE_FACTORS` should come from them too:
+it is based on a few listings for black parts only.
 
 ## Public hosting
 
@@ -18,12 +19,6 @@ BrickLink's public price guide pages.
 - A production server instead of Flask's development server.
 - A limit on simultaneous PDF prints, each of which starts a full Chrome.
 - DNS rebinding: a host could change its address between the link check and the download.
-
-## Prices for larger plates
-
-Mosaics use plates up to 1x4 and 2x2 by default, but the estimate still prices 1x1s. Real
-prices per size (above) would show whether larger plates save money, and whether the
-default should change.
 
 ## Smaller items
 

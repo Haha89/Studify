@@ -291,15 +291,14 @@ def _layout() -> dmc.MantineProvider:
                             id="plates",
                             label="Tailles de plaques",
                             description="Moins de pièces à poser avec les grandes plaques, dans le guide et la liste "
-                            "BrickLink. La 1x1 reste nécessaire pour les tenons isolés. "
-                            "Le prix reste calculé en plaques 1x1.",
+                            "BrickLink, et un prix estimé plus bas. La 1x1 reste nécessaire pour les tenons isolés.",
                             value=list(PLATE_SIZES),
                         ),
                         dmc.Switch(
                             id="round-tiles",
                             label="Tuiles rondes",
                             description="Une tuile ronde 1x1 par tenon pour l'image, façon LEGO Art, et des plaques "
-                            "jusqu'à 1x4 pour la bordure. Plus de pièces à poser. Prix estimé comme des plaques 1x1. "
+                            "jusqu'à 1x4 pour la bordure. Plus de pièces à poser, et un prix estimé plus haut. "
                             "La baseplate se voit entre les tuiles : choisis-la sombre.",
                         ),
                         dmc.Switch(
@@ -746,6 +745,7 @@ def create_app() -> Dash:
                 "distribution": r["distribution"],
                 "baseplates": r["baseplates"],
                 "wanted_list": r["wanted_list"],
+                "parts": r["parts"],
             }
             for r in results
         }
@@ -833,7 +833,7 @@ def create_app() -> Dash:
         if not (settings and builds):
             raise PreventUpdate  # no_update isn't accepted for the wildcard outputs.
         prices = [
-            service.reprice(build["distribution"], build["baseplates"], baseplates, currency)
+            service.reprice(build["distribution"], build["baseplates"], baseplates, currency, build["parts"])
             for build in (builds[price_id["index"]] for price_id in price_ids)
         ]
         return (

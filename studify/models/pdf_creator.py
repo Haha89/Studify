@@ -255,7 +255,8 @@ class PdfCreator:
         rows, cols = self.canvas.shape
         distribution = self.canvas.get_distribution()
         colors = self.get_used_colors()
-        price = self.canvas.get_price(self.baseplates, self.currency)
+        parts = self.canvas.get_round_part_counts() if self.round_tiles else self.canvas.get_part_counts(self.plates)
+        price = self.canvas.get_price(self.baseplates, self.currency, parts)
         t = self.labels
         html_out = template.render(
             title=f"Studify: {self.canvas.source}",

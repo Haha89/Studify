@@ -247,16 +247,25 @@ def _price_fields(price: PriceEstimate) -> dict[str, str]:
     }
 
 
-def reprice(distribution: dict[str | int, int], baseplate_count: int, baseplates: str, currency: str) -> dict[str, str]:
+def reprice(
+    distribution: dict[str | int, int],
+    baseplate_count: int,
+    baseplates: str,
+    currency: str,
+    parts: list[list[int | str]] | None = None,
+) -> dict[str, str]:
     """Price an already rendered style for other baseplates or another currency,
     without fitting it again.
 
     :param distribution: The render's bricks, as {brick id: count}. Ids may be
         strings: the page stores this as JSON.
     :param baseplate_count: Number of baseplates the render covers.
+    :param parts: The render's parts, as [brick id, part number, count] lists, which
+        JSON can store. Defaults to one 1x1 plate per brick.
     """
     counts = {int(brick_id): count for brick_id, count in distribution.items()}
-    return _price_fields(estimate_price(counts, baseplate_count, baseplates, currency))
+    by_part = None if parts is None else {(brick_id, part): count for brick_id, part, count in parts}
+    return _price_fields(estimate_price(counts, baseplate_count, baseplates, currency, by_part))
 
 
 def bricklink_download(name: str, style: str, wanted_list: str) -> dict[str, str]:
@@ -322,7 +331,7 @@ def render_styles(
             regions=regions,
             round_tiles=round_tiles,
         )
-        price = canvas.get_price(baseplates, currency)
+        price = canvas.get_price(baseplates, currency, parts)
         results.append(
             {
                 "style": style,
@@ -336,6 +345,7 @@ def render_styles(
                 "plates": sum(parts.values()),
                 "round_tile_count": sum(count for (_, part), count in parts.items() if part == ROUND_TILE),
                 "distribution": distribution,
+                "parts": [[brick_id, part, count] for (brick_id, part), count in parts.items()],
                 "wanted_list": wanted_list_xml(distribution, parts),
                 **_price_fields(price),
                 "rare_colors": list(price.rare_colors),

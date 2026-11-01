@@ -117,7 +117,8 @@ def process(
     print(f"Canvas: {cols} x {rows} studs ({cols // DIM_BASE} x {rows // DIM_BASE} baseplates)")
     print(f"Colors used: {len(distribution)}")
     print(f"Total elements: {sum(distribution.values())}")
-    price = canvas.get_price(baseplates, currency)
+    parts = canvas.get_round_part_counts() if round_tiles else canvas.get_part_counts(plates)
+    price = canvas.get_price(baseplates, currency, parts)
     print(
         f"Total estimated cost: {price.format()} "
         f"(bricks {price.format(price.bricks_low)}-{price.format(price.bricks_high)} incl. spares, "
@@ -135,7 +136,6 @@ def process(
         lang=lang,
         round_tiles=round_tiles,
     ).generate_html(output_dir=output_dir, open_in_browser=open_in_browser)
-    parts = canvas.get_round_part_counts() if round_tiles else canvas.get_part_counts(plates)
     print(f"{'Pieces' if round_tiles else 'Plates'} to place: {sum(parts.values())}")
     if missing := unavailable_parts(parts):
         print(f"Not sold in every size needed, per BrickLink: {', '.join(missing)}")
