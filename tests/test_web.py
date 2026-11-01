@@ -248,6 +248,7 @@ def test_app_builds_with_every_step():
     layout = str(create_app().layout)
     for component_id in ("upload", "url", "size", "frame", "max-colors", "generate", "styles", "download-pdf"):
         assert f"'{component_id}'" in layout or f'"{component_id}"' in layout
+    assert "https://www.bricklink.com/v2/wanted/upload.page" in layout
 
 
 def test_built_pdf_finds_the_last_build(png_bytes, monkeypatch):

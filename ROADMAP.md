@@ -25,5 +25,6 @@ default should change.
 
 ## Smaller items
 
-- Try a wanted list on BrickLink: uploads are untested. This would check the plate part
-  numbers and the less certain colour ids, notably `Light Pink` → Rose Pink (56).
+- BrickLink accepts our wanted lists, including one with every plain colour in all five
+  sizes. Accepting a line doesn't show a part exists in that colour, or that the colour
+  matches: compare the less certain ids by eye, notably `Light Pink` → Rose Pink (56).

@@ -60,6 +60,7 @@ THEME = {
 }
 
 HIDDEN = {"display": "none"}
+BRICKLINK_UPLOAD_URL = "https://www.bricklink.com/v2/wanted/upload.page"
 
 
 def _step(number: int, title: str, subtitle: str, *children) -> dmc.Paper:
@@ -357,8 +358,12 @@ def _layout() -> dmc.MantineProvider:
             gap="md",
         ),
         dmc.Text(
-            "La liste BrickLink se charge dans Want › Upload, onglet XML : plaques choisies et rab compris, "
-            "baseplates non comprises.",
+            [
+                "La liste BrickLink contient les plaques choisies et le rab, sans les baseplates. Ouvre le fichier "
+                "dans un éditeur de texte, copie tout, puis colle-le sur la ",
+                dmc.Anchor("page d'import BrickLink", href=BRICKLINK_UPLOAD_URL, target="_blank", size="xs"),
+                ", option « Upload BrickLink XML format ».",
+            ],
             c="dimmed",
             size="xs",
             mt="sm",

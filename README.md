@@ -150,8 +150,9 @@ PdfCreator(canvas).generate_html(output_dir="output")  # or .generate_pdf(...)
 ## Ordering on BrickLink
 
 `--bricklink` (or the web app's "Liste BrickLink" button) writes a wanted list of the
-plates a build uses, with 5 % spares, rounded up. On BrickLink, go to Want > Upload, pick the XML tab
-and paste the file's contents. Baseplates are not in the list. Speciality finishes from
+plates a build uses, with 5 % spares, rounded up. On BrickLink's
+[upload page](https://www.bricklink.com/v2/wanted/upload.page), choose "Upload BrickLink XML
+format" and paste the file's contents: it takes text, not a file. The web app links to it. Baseplates are not in the list. Speciality finishes from
 `--full-palette` aren't either; any a build uses are printed so you can add them by hand.
 Not every colour exists in every size, so check what BrickLink reports on upload.
 
