@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
+
 import numpy as np
+import pandas as pd
 import pytest
 
 from studify.cli import main
@@ -18,6 +21,7 @@ from studify.models.plates import (
     plate_sizes,
 )
 from studify.models.static import COLORS, DIM_BASE
+from studify.models.utils import make_map
 
 
 def assert_exact_cover(grid, plates):
@@ -144,6 +148,34 @@ class TestGuide:
         assert "Plates needed" in html and "1x4&nbsp;&times;&nbsp;256" in html
         assert "<dt>Plates</dt><dd>512</dd>" in html
         assert html.count("border-end") > plain.count("border-end")
+
+    def test_each_plate_is_one_merged_cell(self):
+        grid = np.array([[1, 1, 1, 1], [2, 3, 3, 4], [2, 3, 3, 4]])
+        plates = pack_plates(grid)
+        table = make_map(pd.DataFrame(grid), plate_regions(grid.shape, plates))
+
+        assert table.count("<td") == len(plates) == 4
+        assert re.search(r'<td colspan="4" class="c1 [^"]*">1</td>', table)
+        assert re.search(r'<td rowspan="2" class="c2 [^"]*">2</td>', table)
+        assert re.search(r'<td rowspan="2" colspan="2" class="c3 [^"]*">3</td>', table)
+
+    def test_merged_cells_are_outlined_on_all_sides(self):
+        grid = np.array([[1, 1, 1, 1], [2, 3, 3, 4], [2, 3, 3, 4]])
+        table = make_map(pd.DataFrame(grid), plate_regions(grid.shape, pack_plates(grid)))
+
+        top = re.search(r'<td colspan="4" class="([^"]*)"', table).group(1).split()
+        assert {"border-top", "border-start", "border-bottom", "border-end"} <= set(top)
+        square = re.search(r'<td rowspan="2" colspan="2" class="([^"]*)"', table).group(1).split()
+        assert {"border-bottom", "border-end"} <= set(square)  # The others come from its neighbours.
+
+    def test_every_stud_stays_covered_on_a_real_baseplate(self):
+        grid = np.random.default_rng(0).integers(0, 3, (DIM_BASE, DIM_BASE))
+        plates = pack_plates(grid)
+        table = make_map(pd.DataFrame(grid), plate_regions(grid.shape, plates))
+
+        assert table.count("<td") == len(plates)
+        rowspans = [int(v) for v in re.findall(r'rowspan="(\d+)"', table)]
+        assert table.count("<tr>") == DIM_BASE + 1 and max(rowspans) <= 4
 
     def test_can_be_written_in_french(self, canvas, tmp_path):
         html = PdfCreator(canvas, lang="fr").generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
