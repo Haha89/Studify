@@ -13,6 +13,7 @@ from legome.models.utils import (
     make_map,
     nearest_color_indices,
     reduce_palette,
+    remove_stray_bricks,
     rgb_to_lab,
 )
 
@@ -266,3 +267,39 @@ class TestReducePalette:
             reduce_palette(self._image(), self.PALETTE, 0)
         with pytest.raises(ValueError, match="cannot keep"):
             reduce_palette(self._image(), self.PALETTE, 1, keep=(0, 1))
+
+
+class TestRemoveStrayBricks:
+    # Black, white, then a mid grey and a light grey close to white.
+    PALETTE = np.array([(0, 0, 0), (255, 255, 255), (128, 128, 128), (235, 235, 235)])
+
+    def test_a_lone_brick_close_to_its_surroundings_is_merged(self):
+        grid = np.ones((5, 5), dtype=np.intp)
+        grid[2, 2] = 3
+        assert (remove_stray_bricks(grid, self.PALETTE) == 1).all()
+
+    def test_a_lone_brick_unlike_its_surroundings_is_a_detail_and_stays(self):
+        grid = np.ones((5, 5), dtype=np.intp)
+        grid[2, 2] = 0
+        assert np.array_equal(remove_stray_bricks(grid, self.PALETTE), grid)
+
+    def test_a_pair_of_touching_bricks_is_not_stray(self):
+        grid = np.ones((5, 5), dtype=np.intp)
+        grid[2, 2] = grid[3, 3] = 3  # Diagonal neighbours count.
+        assert np.array_equal(remove_stray_bricks(grid, self.PALETTE), grid)
+
+    def test_a_brick_stays_if_too_few_neighbours_agree(self):
+        grid = np.array([[0, 1, 0], [2, 3, 2], [0, 2, 0]], dtype=np.intp)
+        grid[0, 1] = 1
+        assert remove_stray_bricks(grid, self.PALETTE, max_distance=1000, min_support=5)[1, 1] == 3
+
+    def test_corners_only_count_their_real_neighbours(self):
+        grid = np.ones((3, 3), dtype=np.intp)
+        grid[0, 0] = 3
+        assert remove_stray_bricks(grid, self.PALETTE)[0, 0] == 1
+
+    def test_the_input_is_left_untouched(self):
+        grid = np.ones((3, 3), dtype=np.intp)
+        grid[1, 1] = 3
+        remove_stray_bricks(grid, self.PALETTE)
+        assert grid[1, 1] == 3

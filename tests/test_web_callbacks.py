@@ -226,6 +226,29 @@ class TestSelection:
         assert fire("highlight_selection", [None, None], "selected-style.data")["download-pdf"]["disabled"] is True
 
 
+class TestDownloadBricklink:
+    def test_downloads_the_selected_styles_wanted_list(self, fire, source):
+        builds = generate(fire, source)["builds"]["data"]
+        out = fire("download_bricklink", [1, source, builds, "pop"], "download-bricklink.n_clicks")
+
+        file = out["bricklink-file"]["data"]
+        assert file["filename"] == "legome-flag-pop-bricklink.xml"
+        expected = service.bricklink_download("flag.png", "pop", builds["pop"]["distribution"])
+        assert file["content"] == expected["content"]
+        assert "<ITEMID>3024</ITEMID>" in file["content"]
+
+    def test_without_a_selected_style_updates_nothing(self, fire, source):
+        assert fire("download_bricklink", [1, source, {}, None], "download-bricklink.n_clicks") is None
+
+    def test_is_enabled_with_the_selection(self, fire):
+        assert (
+            fire("highlight_selection", ["pop", None], "selected-style.data")["download-bricklink"]["disabled"] is False
+        )
+        assert (
+            fire("highlight_selection", [None, None], "selected-style.data")["download-bricklink"]["disabled"] is True
+        )
+
+
 class TestDownloadPdf:
     @pytest.fixture
     def printed(self, monkeypatch):

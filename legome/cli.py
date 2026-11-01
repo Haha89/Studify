@@ -69,6 +69,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Blend colors the palette lacks with Floyd-Steinberg dithering.",
     )
     parser.add_argument(
+        "--keep-strays",
+        action="store_true",
+        help="Keep isolated bricks instead of merging them into their surroundings.",
+    )
+    parser.add_argument(
+        "--bricklink",
+        action="store_true",
+        help="Also write a BrickLink wanted list (XML) beside the guide.",
+    )
+    parser.add_argument(
         "--frame",
         type=int,
         default=0,
@@ -98,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.image is None:
         parser.error("the following arguments are required: image (or pass --gui)")
+    if args.size < 1:
+        parser.error("--size must be at least 1")
     if not 0 <= args.frame < DIM_BASE // 2:
         parser.error(f"--frame must be between 0 and {DIM_BASE // 2 - 1} studs")
     if args.max_colors is not None and args.max_colors < 1:
@@ -124,6 +136,8 @@ def main(argv: list[str] | None = None) -> int:
             palette=args.palette,
             baseplates=args.baseplates,
             currency=args.currency,
+            bricklink=args.bricklink,
+            clean_strays=not args.keep_strays,
         )
     except FileNotFoundError as exc:
         parser.error(str(exc))
