@@ -141,13 +141,13 @@ class TestOverviewImages:
 
         assert "<figcaption>Original</figcaption>" not in html
 
-    def test_embeds_the_reconstructed_mosaic_as_a_pixelated_png(self, red_blue_image, tmp_path):
+    def test_embeds_the_reconstructed_mosaic_as_a_smooth_png(self, red_blue_image, tmp_path):
         canvas = Canvas(1)
         canvas.fit_from_image(red_blue_image)
         html = PdfCreator(canvas).generate_html(output_dir=tmp_path).read_text(encoding="utf-8")
 
         assert "<figcaption>Reconstructed &middot; 32 x 32 studs</figcaption>" in html
-        assert 'alt="Reconstructed LEGO mosaic" class="pixelated"' in html
+        assert 'alt="Reconstructed LEGO mosaic">' in html
 
     def test_omits_the_original_image_when_the_canvas_has_no_source_path(self, two_base_canvas, tmp_path):
         # two_base_canvas is built directly from brick ids, bypassing fit_from_image.
@@ -163,7 +163,7 @@ class TestOverviewImages:
         assert "<figcaption>Original</figcaption>" not in html
         assert "<figcaption>Reconstructed" not in html
 
-    def test_reconstructed_mosaic_is_the_canvas_preview_image(self, two_base_canvas, tmp_path):
+    def test_reconstructed_mosaic_is_the_realistic_image(self, two_base_canvas, tmp_path):
         import base64
         import re
 
@@ -177,9 +177,9 @@ class TestOverviewImages:
         png_bytes = base64.b64decode(match.group(1))
         decoded_bgr = cv2.imdecode(np.frombuffer(png_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
         decoded_rgb = cv2.cvtColor(decoded_bgr, cv2.COLOR_BGR2RGB)
-        # The embedded preview is the scaled, gridded image (not a raw 1px-per-stud
-        # copy) -- see TestToPreviewImage for the grid/scaling behaviour itself.
-        assert np.array_equal(decoded_rgb, two_base_canvas.to_preview_image())
+        # The overview shows the mosaic as built, not the flat, gridded preview.
+        assert np.array_equal(decoded_rgb, two_base_canvas.to_realistic_image())
+        assert not np.array_equal(decoded_rgb, two_base_canvas.to_preview_image())
 
 
 class TestLocalColorIds:

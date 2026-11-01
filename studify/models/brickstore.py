@@ -42,16 +42,15 @@ class BrickStore:
     ]
 
     @classmethod
-    def palette(cls, name: str) -> list[Brick]:
+    def palette(cls, name: str, part: str = PLATE_1X1) -> list[Brick]:
         """Return the plain buildable bricks in a ``pricing.PALETTE_TIERS`` palette:
-        "buyable" (no rare colours), "all", or "common" only. A colour with no 1x1 plate
-        is left out of all of them: nothing else can cover a lone stud."""
+        "buyable" (no rare colours), "all", or "common" only. A colour this part doesn't
+        come in is left out of all of them. By default that part is the 1x1 plate, as
+        nothing else can cover a lone stud."""
         if name not in PALETTE_TIERS:
             raise ValueError(f"Unknown palette {name!r}; expected one of {list(PALETTE_TIERS)}")
         tiers = PALETTE_TIERS[name]
-        return [
-            brick for brick in cls.available_bricks if color_tier(brick.id) in tiers and comes_in(brick.id, PLATE_1X1)
-        ]
+        return [brick for brick in cls.available_bricks if color_tier(brick.id) in tiers and comes_in(brick.id, part)]
 
     @classmethod
     def bricks_named(cls, names: list[str]) -> list[Brick]:

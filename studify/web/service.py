@@ -26,10 +26,12 @@ from urllib.parse import urlparse
 import cv2
 import numpy as np
 
-from studify.models.bricklink import wanted_list_xml
+from studify.models.bricklink import ROUND_TILE, wanted_list_xml
+from studify.models.canvas import DEFAULT_FRAME_COLOR
 from studify.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
-from studify.models.plates import PLATE_SIZES
+from studify.models.plates import PLATE_SIZES, count_parts, pack_baseplates, plate_regions
 from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
+from studify.models.realistic import render_round, render_tiles
 from studify.models.utils import fit_within, read_image
 from studify.process import build_canvas
 
@@ -164,6 +166,11 @@ def source_path(session_id: str) -> Path:
     return images[0]
 
 
+def path_in_session(session_id: str, name: str) -> Path:
+    """Return the path of a file kept next to a session's source image."""
+    return source_path(session_id).parent / name
+
+
 def preview(path: Path, max_dimension: int = 640) -> tuple[str, int, int]:
     """A small PNG ``data:`` URI of the source image for the page, with its
     width and height in pixels."""
@@ -277,31 +284,57 @@ def render_styles(
     dither: bool = False,
     plates: Iterable[str] = PLATE_SIZES,
     tinted: bool = True,
+    round_tiles: bool = False,
+    frame_color: str = DEFAULT_FRAME_COLOR,
 ) -> list[dict[str, object]]:
     """Fit the session's image (cropped to ``crop``, if given) once per style in
     ``STYLE_LABELS`` and return, for each, its preview image, build figures and
     price estimate (see ``pricing.estimate_price``). ``tinted`` only concerns the PDF
-    guide, and is accepted so that the same settings can be passed to both."""
+    guide, and is accepted so that the same settings can be passed to both.
+
+    Each style's mosaic is also kept in the session, for ``realistic_png``."""
     path = _working_image(session_id, crop)
     results = []
     for style, label in STYLE_LABELS.items():
         canvas = build_canvas(
-            size, path, frame=frame, max_colors=max_colors, style=style, palette=palette, dither=dither
+            size,
+            path,
+            frame=frame,
+            frame_color=frame_color,
+            max_colors=max_colors,
+            style=style,
+            palette=palette,
+            dither=dither,
+            round_tiles=round_tiles,
         )
-        parts = canvas.get_part_counts(plates)
         rows, cols = canvas.shape
         distribution = canvas.get_distribution()
+        if round_tiles:
+            parts = canvas.get_round_part_counts()
+            regions = plate_regions(canvas.shape, canvas.border_plates())
+        else:
+            packed = pack_baseplates(canvas.get_brick_ids(), plates)
+            parts = count_parts(packed)
+            regions = plate_regions(canvas.shape, packed)
+        np.savez_compressed(
+            path_in_session(session_id, f"mosaic-{style}.npz"),
+            colors=canvas.to_pixel_array(),
+            regions=regions,
+            round_tiles=round_tiles,
+        )
         price = canvas.get_price(baseplates, currency)
         results.append(
             {
                 "style": style,
                 "label": label,
-                "image": data_uri_from_rgb_array(canvas.to_preview_image()),
+                "image": data_uri_from_rgb_array(canvas.to_preview_image(round_tiles)),
+                "round_tiles": round_tiles,
                 "studs": f"{cols} × {rows}",
                 "baseplates": canvas.baseplate_count,
                 "colors": len(distribution),
                 "bricks": sum(distribution.values()),
                 "plates": sum(parts.values()),
+                "round_tile_count": sum(count for (_, part), count in parts.items() if part == ROUND_TILE),
                 "distribution": distribution,
                 "wanted_list": wanted_list_xml(distribution, parts),
                 **_price_fields(price),
@@ -309,6 +342,25 @@ def render_styles(
             }
         )
     return results
+
+
+def realistic_png(session_id: str, style: str) -> bytes:
+    """Return the mosaic ``render_styles`` last made for a session and style, drawn
+    as tiles, as PNG file bytes."""
+    if style not in STYLE_LABELS:
+        raise ImageError("Style inconnu.")
+    mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
+    if not mosaic.is_file():
+        raise ImageError("Cette mosaïque n'a pas encore été générée.")
+    with np.load(mosaic) as saved:
+        if saved["round_tiles"]:
+            pixels = render_round(saved["colors"], regions=saved["regions"])
+        else:
+            pixels = render_tiles(saved["colors"], saved["regions"])
+    ok, png = cv2.imencode(".png", cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR))
+    if not ok:
+        raise ImageError("Impossible de dessiner cette mosaïque.")
+    return png.tobytes()
 
 
 def build_pdf(
@@ -324,13 +376,33 @@ def build_pdf(
     dither: bool = False,
     plates: Iterable[str] = PLATE_SIZES,
     tinted: bool = True,
+    round_tiles: bool = False,
+    frame_color: str = DEFAULT_FRAME_COLOR,
 ) -> Path:
     """Write the build guide for one style as a PDF and return its path."""
     if style not in STYLE_LABELS:
         raise ImageError("Style inconnu.")
     path = _working_image(session_id, crop)
-    canvas = build_canvas(size, path, frame=frame, max_colors=max_colors, style=style, palette=palette, dither=dither)
-    creator = PdfCreator(canvas, baseplates=baseplates, currency=currency, tinted=tinted, plates=plates, lang="fr")
+    canvas = build_canvas(
+        size,
+        path,
+        frame=frame,
+        frame_color=frame_color,
+        max_colors=max_colors,
+        style=style,
+        palette=palette,
+        dither=dither,
+        round_tiles=round_tiles,
+    )
+    creator = PdfCreator(
+        canvas,
+        baseplates=baseplates,
+        currency=currency,
+        tinted=tinted,
+        plates=plates,
+        lang="fr",
+        round_tiles=round_tiles,
+    )
     return creator.generate_pdf(output_dir=source_path(session_id).parent / f"guide-{style}")
 
 

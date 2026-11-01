@@ -79,7 +79,8 @@ uv run studify --gui
 | `-o`, `--output-dir` | Where to write the guide (default `./output`). |
 | `--no-plot` | Skip the matplotlib preview. |
 | `--no-open` | Do not open the guide in a browser. |
-| `--frame` | Black frame this many studs wide around the mosaic (default `0`, max `15`). |
+| `--frame` | Frame this many studs wide around the mosaic (default `0`, max `15`). |
+| `--frame-color` | Colour of the frame: `black` (default) or `white`. |
 | `--palette` | Colours to draw from: `buyable` (default: no rare, pricey colours), `all`, or `common` only. |
 | `--full-palette` | Also match trans, chrome, pearl, metallic and similar finishes. |
 | `--colors` | Only use these LEGO colours, comma-separated, e.g. `"Black,White,Red"`. |
@@ -90,6 +91,7 @@ uv run studify --gui
 | `--plain-maps` | Leave stud maps untinted, to save ink when printing the guide. |
 | `--plates` | Plate sizes to use, comma-separated, from `1x1,1x2,1x3,1x4,2x2` (default: all). 1x1 is always included; `--plates 1x1` gives one plate per stud. |
 | `--lang` | Language of the guide: `en` (default) or `fr`. |
+| `--round-tiles` | Build the picture from round 1x1 tiles (BrickLink 98138), one per stud, in the colours they come in, and its border (frame and letterbox bars) from plates up to 1x4. Overrides `--plates`. Priced like 1x1 plates; the baseplate shows between the tiles, so pick a dark one. |
 | `--bricklink` | Also write a BrickLink wanted list, `<image-name>-bricklink.xml`, beside the guide. |
 | `--baseplates` | Price `official` LEGO baseplates (default) or cheaper `compatible` ones. |
 | `--currency` | Currency of the price estimate: `EUR` (default) or `USD`. |
