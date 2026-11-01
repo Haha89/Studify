@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 import cv2
 import numpy as np
 
+from legome.models.bricklink import wanted_list_xml
 from legome.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
 from legome.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
 from legome.models.utils import fit_within, read_image
@@ -247,6 +248,21 @@ def reprice(distribution: dict[str | int, int], baseplate_count: int, baseplates
     """
     counts = {int(brick_id): count for brick_id, count in distribution.items()}
     return _price_fields(estimate_price(counts, baseplate_count, baseplates, currency))
+
+
+def bricklink_download(name: str, style: str, distribution: dict[str | int, int]) -> dict[str, str]:
+    """A rendered style's BrickLink wanted list, as a ``dcc.Download`` payload.
+
+    :param name: The source image's original name, used to name the file.
+    :param distribution: The render's bricks, as {brick id: count}; ids may be
+        strings, see ``reprice``.
+    """
+    counts = {int(brick_id): count for brick_id, count in distribution.items()}
+    return {
+        "content": wanted_list_xml(counts),
+        "filename": f"legome-{_safe_stem(name)}-{style}-bricklink.xml",
+        "type": "application/xml",
+    }
 
 
 def render_styles(

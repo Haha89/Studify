@@ -4,9 +4,10 @@ import cv2
 import numpy as np
 import pytest
 
+from legome.models.brick import Brick
 from legome.models.brickstore import BrickStore
 from legome.models.canvas import FRAME_COLOR, Canvas
-from legome.models.static import DIM_BASE
+from legome.models.static import COLORS, DIM_BASE
 
 
 def test_size_is_expressed_in_studs():
@@ -352,3 +353,40 @@ def test_fit_from_image_reads_non_ascii_paths(tmp_path):
     canvas = Canvas(1)
     canvas.fit_from_image(path)
     assert canvas.shape == (DIM_BASE, DIM_BASE)
+
+
+class TestCleanStrays:
+    WHITE, LIGHT_GREY = Brick(0, (255, 255, 255)), Brick(1, (235, 235, 235))
+
+    @pytest.fixture
+    def speck(self, tmp_path):
+        """A white 32x32 picture with one light grey pixel."""
+        img = np.full((32, 32, 3), 255, dtype=np.uint8)
+        img[10, 10] = 235
+        path = tmp_path / "speck.png"
+        cv2.imwrite(str(path), img)
+        return path
+
+    def test_merges_a_stray_brick_by_default(self, speck):
+        canvas = Canvas(1)
+        canvas.fit_from_image(speck, palette=[self.WHITE, self.LIGHT_GREY])
+        assert canvas.get_distribution() == {0: 32 * 32}
+
+    def test_can_be_turned_off(self, speck):
+        canvas = Canvas(1)
+        canvas.fit_from_image(speck, palette=[self.WHITE, self.LIGHT_GREY], clean_strays=False)
+        assert canvas.get_distribution() == {0: 32 * 32 - 1, 1: 1}
+
+    def test_a_dithered_mosaic_keeps_its_scattered_bricks(self, speck, monkeypatch):
+        def fail(*args):
+            raise AssertionError("dithered bricks must not be cleaned")
+
+        monkeypatch.setattr("legome.models.canvas.remove_stray_bricks", fail)
+        Canvas(1).fit_from_image(speck, palette=[self.WHITE, self.LIGHT_GREY], dither=True)
+
+    def test_the_frame_is_left_alone(self, speck):
+        black = Brick(2, COLORS["Black"])
+        canvas = Canvas(1, frame=2)
+        canvas.fit_from_image(speck, palette=[self.WHITE, self.LIGHT_GREY, black])
+        ids = canvas.get_brick_ids()
+        assert (ids[:2] == 2).all() and (ids[-2:] == 2).all() and (ids[:, :2] == 2).all() and (ids[:, -2:] == 2).all()

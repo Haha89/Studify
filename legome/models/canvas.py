@@ -19,6 +19,7 @@ from legome.models.utils import (
     nearest_color_indices,
     read_image,
     reduce_palette,
+    remove_stray_bricks,
     rgb_to_lab,
 )
 
@@ -215,6 +216,7 @@ class Canvas:
         max_colors: int | None = None,
         dither: bool = False,
         style: Style | None = None,
+        clean_strays: bool = True,
     ) -> None:
         """
         Fill the canvas from an image, mapping every pixel to its nearest brick
@@ -232,6 +234,9 @@ class Canvas:
             letterbox bars are never dithered.
         :param style: Retouch the picture first (see ``style.STYLES``). Its
             ``colors`` are ignored here; pick the palette with ``palette``.
+        :param clean_strays: Merge isolated bricks into their surroundings (see
+            ``utils.remove_stray_bricks``). Not with ``dither``, whose scattered
+            bricks are the point.
         """
         src = read_image(path)
         if src is None:
@@ -258,6 +263,9 @@ class Canvas:
         if dither:
             top, bottom, left, right = self.content_box
             closest[top:bottom, left:right] = dither_indices(resized[top:bottom, left:right], colors)
+        elif clean_strays:
+            top, bottom, left, right = self.content_box
+            closest[top:bottom, left:right] = remove_stray_bricks(closest[top:bottom, left:right], colors)
         if outlined:
             # Outline in the darkest colour on hand: black, unless the palette lacks it.
             top, bottom, left, right = self.content_box

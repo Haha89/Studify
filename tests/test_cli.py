@@ -6,6 +6,7 @@ from types import ModuleType
 import pytest
 
 from legome.cli import main
+from legome.models.canvas import Canvas
 
 
 def test_requires_an_image(capsys):
@@ -56,6 +57,14 @@ def test_gui_flag_launches_the_gui_without_an_image(monkeypatch):
     assert launched == [True]
 
 
+@pytest.mark.parametrize("size", ["0", "-1"])
+def test_rejects_a_size_below_one(red_blue_image, capsys, size):
+    with pytest.raises(SystemExit) as exc:
+        main([str(red_blue_image), "--size", size, "--no-plot", "--no-open"])
+    assert exc.value.code == 2
+    assert "--size" in capsys.readouterr().err
+
+
 def test_rejects_an_oversized_frame(red_blue_image, capsys):
     with pytest.raises(SystemExit) as exc:
         main([str(red_blue_image), "--frame", "16", "--no-plot", "--no-open"])
@@ -97,6 +106,37 @@ def test_price_options_end_to_end(red_blue_image, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Total estimated cost:" in out and "$" in out
     assert "compatible baseplates" in out and "shipping not included" in out
+
+
+def test_bricklink_flag_writes_a_wanted_list_beside_the_guide(red_blue_image, tmp_path, capsys):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    assert main(args) == 0
+    assert not (tmp_path / "red_blue-bricklink.xml").exists()
+
+    assert main([*args, "--bricklink"]) == 0
+    assert "<ITEMID>3024</ITEMID>" in (tmp_path / "red_blue-bricklink.xml").read_text(encoding="utf-8")
+    assert "BrickLink wanted list:" in capsys.readouterr().out
+
+
+def test_bricklink_flag_names_colours_it_cannot_list(red_blue_image, tmp_path, capsys):
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    assert main([*args, "--bricklink", "--colors", "Chrome Gold,Black"]) == 0
+    assert "add them by hand: Chrome Gold" in capsys.readouterr().out
+
+
+def test_keep_strays_flag_reaches_the_canvas(red_blue_image, tmp_path, monkeypatch):
+    seen = []
+    real = Canvas.fit_from_image
+
+    def spy(self, *args, **kwargs):
+        seen.append(kwargs["clean_strays"])
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Canvas, "fit_from_image", spy)
+    args = [str(red_blue_image), "-s", "1", "-o", str(tmp_path), "--no-plot", "--no-open"]
+    main(args)
+    main([*args, "--keep-strays"])
+    assert seen == [True, False]
 
 
 def test_palette_flag(red_blue_image, tmp_path):

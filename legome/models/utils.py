@@ -17,6 +17,10 @@ CHUNK_SIZE = 8192
 # Studs per bold sub-square in a stud map, to help count position while building.
 GRID_MAJOR_EVERY = 8
 
+# When a lone brick counts as noise rather than detail (see remove_stray_bricks).
+STRAY_MAX_DISTANCE = 25.0
+STRAY_MIN_SUPPORT = 3
+
 
 # Floyd-Steinberg error diffusion: (row offset, column offset along the scan
 # direction, share of the error).
@@ -164,6 +168,41 @@ def reduce_palette(pixels: np.ndarray, palette: np.ndarray, max_colors: int, kee
         cost[[i for i, index in enumerate(selected) if index in keep]] = np.inf
         selected.pop(int(np.argmin(cost)))
     return np.array(selected, dtype=np.intp)
+
+
+def remove_stray_bricks(
+    indices: np.ndarray,
+    palette: np.ndarray,
+    max_distance: float = STRAY_MAX_DISTANCE,
+    min_support: int = STRAY_MIN_SUPPORT,
+) -> np.ndarray:
+    """
+    Merge isolated bricks into their surroundings: a brick none of whose eight
+    neighbours shares its colour takes the colour most of them have. Such bricks
+    read as noise, and each odd colour is one more to buy.
+
+    A brick stays if too few neighbours agree on a colour (a busy area, not a
+    region), or if that colour looks too different (a real detail, like the glint
+    in an eye).
+
+    :param indices: (H, W) array of indices into ``palette``.
+    :param palette: (K, 3) array of RGB palette colours.
+    :param max_distance: Largest CIELAB distance a brick may change colour by.
+    :param min_support: How many neighbours must share the replacement colour.
+    :return: A new (H, W) array of indices.
+    """
+    palette_lab = rgb_to_lab(palette)
+    windows = np.lib.stride_tricks.sliding_window_view(np.pad(indices, 1, constant_values=-1), (3, 3))
+    neighbours = np.delete(windows.reshape(*indices.shape, 9), 4, axis=2)
+    cleaned = indices.copy()
+    for y, x in np.argwhere(~(neighbours == indices[..., None]).any(axis=2)):
+        around = neighbours[y, x]
+        counts = np.bincount(around[around >= 0], minlength=1)
+        replacement = int(np.argmax(counts))
+        distance = np.linalg.norm(palette_lab[indices[y, x]] - palette_lab[replacement])
+        if counts[replacement] >= min_support and distance <= max_distance:
+            cleaned[y, x] = replacement
+    return cleaned
 
 
 def get_distribution(bricks: list[list[Brick]]) -> dict[int, int]:

@@ -317,9 +317,21 @@ def _layout() -> dmc.MantineProvider:
         "Télécharge le guide",
         "Un PDF A4 : l'aperçu, puis une page par baseplate avec la carte des tenons et la liste des briques.",
         dmc.Group(
-            [dmc.Button("Télécharger le PDF", id="download-pdf", size="md", disabled=True), html.Div(id="pdf-status")],
+            [
+                dmc.Button("Télécharger le PDF", id="download-pdf", size="md", disabled=True),
+                dmc.Button("Liste BrickLink", id="download-bricklink", size="md", variant="light", disabled=True),
+                html.Div(id="pdf-status"),
+            ],
             gap="md",
         ),
+        dmc.Text(
+            "La liste BrickLink se charge dans Want › Upload, onglet XML : plaques 1x1 et rab compris, "
+            "baseplates non comprises.",
+            c="dimmed",
+            size="xs",
+            mt="sm",
+        ),
+        dcc.Download(id="bricklink-file"),
         dcc.Store(id="pdf-url"),  # Set once a PDF is ready; downloading it is done client-side.
         dcc.Store(id="pdf-download-done"),
     )
@@ -641,12 +653,26 @@ def create_app() -> Dash:
     @app.callback(
         Output({"type": "style-card", "index": ALL}, "className"),
         Output("download-pdf", "disabled"),
+        Output("download-bricklink", "disabled"),
         Input("selected-style", "data"),
         State({"type": "style-card", "index": ALL}, "id"),
     )
     def highlight_selection(selected, card_ids):
         classes = ["style-card selected" if card["index"] == selected else "style-card" for card in card_ids]
-        return classes, selected is None
+        return classes, selected is None, selected is None
+
+    @app.callback(
+        Output("bricklink-file", "data"),
+        Input("download-bricklink", "n_clicks"),
+        State("source", "data"),
+        State("builds", "data"),
+        State("selected-style", "data"),
+        prevent_initial_call=True,
+    )
+    def download_bricklink(_clicks, source, builds, style):
+        if not (source and builds and style):
+            return no_update
+        return service.bricklink_download(source["name"], style, builds[style]["distribution"])
 
     @app.server.route("/guide/<session_id>/<style>.pdf")
     def serve_pdf(session_id, style):

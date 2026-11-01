@@ -355,11 +355,6 @@ figcaption {
         box-shadow: none;
     }
 
-    .cover {
-        break-after: page;
-        page-break-after: always;
-    }
-
     /* One baseplate per printed page. The colour reference always follows the
        last baseplate, so it never needs a page break of its own. */
     .overview,

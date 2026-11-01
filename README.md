@@ -25,14 +25,14 @@ with a 2-stud black frame:
 | Original | Natural | Pop (`--style pop`) | Comic (`--style comic`) |
 | :---: | :---: | :---: | :---: |
 | <img src="docs/images/dog-original.png" width="200" alt="Original picture"> | <img src="docs/images/dog-natural.png" width="200" alt="Natural mosaic"> | <img src="docs/images/dog-pop.png" width="200" alt="Pop-art mosaic"> | <img src="docs/images/dog-comic.png" width="200" alt="Comic mosaic"> |
-| | 57 colours | 12 colours | 56 colours |
-| | 404–813 € | 291–512 € | 353–678 € |
+| | 55 colours | 12 colours | 56 colours |
+| | 402–809 € | 291–512 € | 353–676 € |
 
 Prices are estimates with official LEGO baseplates, shipping excluded (see
 [Pricing](#pricing)). The pop style's short palette makes it the cheapest to build.
 
 **Example build guide:** [`docs/example-guide-dog.pdf`](docs/example-guide-dog.pdf), the
-pop render at 2 x 2 baseplates. It has an overview, then one A4 page per baseplate with
+pop render at 2 x 2 baseplates. It opens with an overview, then has one A4 page per baseplate with
 its stud map and the bricks it needs, then the colour reference.
 
 Regenerate these with `uv run python scripts/make_docs.py`.
@@ -65,6 +65,9 @@ uv run legome pics/dog.png -s 3 --max-colors 8
 uv run legome pics/alex.jpg -s 3 --frame 2 --style pop
 uv run legome pics/dog.png -s 3 --frame 2 --style comic
 
+# Also write a BrickLink wanted list, to order the bricks in one go
+uv run legome pics/dog.png -s 3 --bricklink
+
 # Graphical interface (needs `uv sync --all-extras`)
 uv run legome --gui
 ```
@@ -78,10 +81,13 @@ uv run legome --gui
 | `--no-open` | Do not open the guide in a browser. |
 | `--frame` | Black frame this many studs wide around the mosaic (default `0`, max `15`). |
 | `--palette` | Colours to draw from: `buyable` (default: no rare, pricey colours), `all`, or `common` only. |
+| `--full-palette` | Also match trans, chrome, pearl, metallic and similar finishes. |
 | `--colors` | Only use these LEGO colours, comma-separated, e.g. `"Black,White,Red"`. |
 | `--max-colors` | Use at most N colours, chosen to best fit the image. |
 | `--style` | Retouch the photo first: `natural` (default), `pop` (vivid, flat, short palette) or `comic` (black outlines). |
 | `--dither` | Blend colours the palette lacks with Floyd-Steinberg dithering. |
+| `--keep-strays` | Keep isolated bricks instead of merging them into their surroundings. |
+| `--bricklink` | Also write a BrickLink wanted list, `<image-name>-bricklink.xml`, beside the guide. |
 | `--baseplates` | Price `official` LEGO baseplates (default) or cheaper `compatible` ones. |
 | `--currency` | Currency of the price estimate: `EUR` (default) or `USD`. |
 | `--gui` | Launch the graphical interface. |
@@ -98,7 +104,8 @@ uv run legome-web        # then open http://127.0.0.1:8050
 
 Upload a photo (or paste a link), crop it if you like, pick the size, frame, colour
 limit, baseplates and currency, compare the natural, pop and comic renders side by side
-with their prices, and download the chosen one as a PDF guide.
+with their prices, and download the chosen one as a PDF guide or a BrickLink wanted list.
+Uploads are stored at 2000 pixels at most on the longest side.
 PDFs are printed by a headless Chrome, Chromium or Edge; set `LEGOME_BROWSER` to point at
 one if it isn't found automatically.
 
@@ -126,11 +133,21 @@ PdfCreator(canvas).generate_html(output_dir="output")  # or .generate_pdf(...)
    (Euclidean distance in CIELAB, not raw RGB), optionally after narrowing the palette
    to the N colours that best fit the image, and optionally with Floyd-Steinberg
    dithering (`Canvas.fit_from_image`).
-3. **Split** — the mosaic is cut into 32x32 sub-canvases, one per baseplate, left to right
+3. **Clean up** — unless dithering, a lone brick of a similar colour to its surroundings
+   joins them, while real details like the glint in an eye stay (`utils.remove_stray_bricks`).
+4. **Split** — the mosaic is cut into 32x32 sub-canvases, one per baseplate, left to right
    and top to bottom (`PdfCreator.get_bases`).
-4. **Render** — each baseplate becomes an HTML table of brick ids, bordered around every
+5. **Render** — each baseplate becomes an HTML table of brick ids, bordered around every
    run of same-coloured bricks so you can see the shapes while building
    (`utils.make_map`).
+
+## Ordering on BrickLink
+
+`--bricklink` (or the web app's "Liste BrickLink" button) writes a wanted list of 1x1
+plates (part 3024), with 5 % spares. On BrickLink, go to Want > Upload, pick the XML tab
+and paste the file's contents. Baseplates are not in the list. Speciality finishes from
+`--full-palette` aren't either; any a build uses are printed so you can add them by hand.
+Not every colour exists as a 1x1 plate, so check what BrickLink reports on upload.
 
 ## Pricing
 
@@ -159,11 +176,18 @@ legome/
   export/             Jinja2 template + print stylesheet
   models/
     brick.py          immutable Brick (palette id + RGB)
+    bricklink.py      BrickLink colour ids and wanted-list XML
     brickstore.py     the orderable palette and its prices
     canvas.py         the brick grid: fitting, resizing, cost, plotting
     pdf_creator.py    splits a canvas into baseplates and renders the guide
-    static.py         the 135 LEGO colours and DIM_BASE (32)
-    utils.py          brick counting and stud-map HTML
+    pricing.py        colour rarity and the price estimate
+    static.py         the 133 LEGO colours and DIM_BASE (32)
+    style.py          the natural, pop and comic retouching
+    utils.py          colour matching, cleanup, brick counting and stud-map HTML
+  web/
+    app.py            Dash web app (`legome-web`)
+    service.py        everything it does, minus the UI
+scripts/make_docs.py  regenerates the README's images and example guide
 tests/                pytest suite
 pics/                 sample images
 ```

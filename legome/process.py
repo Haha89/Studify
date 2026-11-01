@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from legome.models.bricklink import unlisted_colors, wanted_list_xml
 from legome.models.brickstore import BrickStore
 from legome.models.canvas import Canvas
 from legome.models.pdf_creator import PdfCreator
@@ -20,6 +21,7 @@ def build_canvas(
     dither: bool = False,
     style: str = "natural",
     palette: str = DEFAULT_PALETTE,
+    clean_strays: bool = True,
 ) -> Canvas:
     """
     Turn an image into a fitted LEGO mosaic, without writing anything.
@@ -39,6 +41,7 @@ def build_canvas(
         "buyable" (no rare colours, the default), "all" or "common" (see
         ``pricing.PALETTE_TIERS``). Ignored when ``colors``, ``full_palette`` or
         the style's own palette applies.
+    :param clean_strays: Merge isolated bricks into their surroundings.
     :return: The fitted canvas.
     """
     canvas = Canvas(size, frame=frame)
@@ -51,7 +54,9 @@ def build_canvas(
         bricks = BrickStore.all_bricks
     else:
         bricks = BrickStore.palette(palette)
-    canvas.fit_from_image(path, palette=bricks, max_colors=max_colors, dither=dither, style=preset)
+    canvas.fit_from_image(
+        path, palette=bricks, max_colors=max_colors, dither=dither, style=preset, clean_strays=clean_strays
+    )
     return canvas
 
 
@@ -63,6 +68,7 @@ def process(
     open_in_browser: bool = True,
     baseplates: str = "official",
     currency: str = "EUR",
+    bricklink: bool = False,
     **options,
 ) -> Canvas:
     """
@@ -75,8 +81,9 @@ def process(
     :param open_in_browser: Open the build guide once written.
     :param baseplates: Price "official" LEGO or "compatible" baseplates.
     :param currency: "EUR" or "USD", for the price estimate.
+    :param bricklink: Also write a BrickLink wanted list beside the guide.
     :param options: Mosaic options passed on to ``build_canvas`` (full_palette,
-        frame, colors, max_colors, dither, style).
+        frame, colors, max_colors, dither, style, palette, clean_strays).
     :return: The fitted canvas.
     """
     canvas = build_canvas(size, path, **options)
@@ -99,6 +106,13 @@ def process(
         output_dir=output_dir, open_in_browser=open_in_browser
     )
     print(f"Build guide: {guide}")
+
+    if bricklink:
+        wanted_list = guide.with_name(f"{guide.stem}-bricklink.xml")
+        wanted_list.write_text(wanted_list_xml(distribution), encoding="utf-8")
+        print(f"BrickLink wanted list: {wanted_list}")
+        if unlisted := unlisted_colors(distribution):
+            print(f"Not in the wanted list, add them by hand: {', '.join(unlisted)}")
 
     if plot:
         canvas.plot_canvas()
