@@ -104,6 +104,7 @@ def generate(
     assembly="baseplates",
     sharp=False,
     accents=False,
+    improved_visibility=False,
 ):
     return fire(
         "generate_styles",
@@ -125,6 +126,7 @@ def generate(
             assembly,
             sharp,
             accents,
+            improved_visibility,
         ],
         "generate.n_clicks",
     )
@@ -398,13 +400,30 @@ class TestReliefEditor:
         before = built["builds"]["data"]["natural"]["wanted_list"]
 
         service.save_relief_edit(source["session"], "natural", [0] * (32 * 32))
-        out = fire("apply_relief_edit", [1, source, settings], "relief-saved.data")
+        out = fire("apply_relief_edit", [1, None, source, settings], "relief-saved.data")
         assert out["builds"]["data"]["natural"]["wanted_list"] != before
         assert out["selected-style"]["data"] is None
         assert "suivent" in str(out["relief-status"]["children"])
 
         again = generate(fire, source, relief="stepped")
         assert again["builds"]["data"]["natural"]["wanted_list"] == before
+        assert "retiré" in str(again["relief-status"]["children"])
+        assert again["relief-restore-area"]["style"] == {}
+
+        restored = fire("apply_relief_edit", [1, 1, source, settings], "relief-restore.n_clicks")
+        assert restored["builds"]["data"]["natural"]["wanted_list"] != before
+        assert restored["relief-restore-area"]["style"] == {"display": "none"}
+
+    def test_nothing_is_said_when_no_relief_was_painted(self, fire, source):
+        built = generate(fire, source, relief="stepped")
+        assert built["relief-status"]["children"] == ""
+        assert built["relief-restore-area"]["style"] == {"display": "none"}
+
+    def test_a_flat_render_offers_nothing_to_restore_onto(self, fire, source):
+        generate(fire, source, relief="stepped")
+        service.save_relief_edit(source["session"], "natural", [0] * (32 * 32))
+        built = generate(fire, source)
+        assert built["relief-status"]["children"] == ""
 
 
 class TestLanguage:

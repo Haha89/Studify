@@ -315,11 +315,12 @@ def render_styles(
     assembly: str = DEFAULT_ASSEMBLY,
     sharp: bool = False,
     accents: bool = False,
+    improved_visibility: bool = False,
 ) -> list[dict[str, object]]:
     """Fit the session's image (cropped to ``crop``, if given) once per style in
     ``STYLE_LABELS`` and return, for each, its preview image, build figures and
-    price estimate (see ``pricing.estimate_price``). ``tinted`` only concerns the PDF
-    guide, and is accepted so that the same settings can be passed to both.
+    price estimate (see ``pricing.estimate_price``). ``tinted`` and ``improved_visibility``
+    only concern the PDF guide, and are accepted so that the same settings can be passed to both.
 
     Each style's mosaic is also kept in the session, for ``realistic_png``."""
     path = _working_image(session_id, crop)
@@ -495,10 +496,29 @@ def save_relief_edit(session_id: str, style: str, heights: object) -> None:
     np.save(_edit_path(session_id, style), clean_heights(grid))
 
 
-def clear_relief_edits(session_id: str) -> None:
-    """Forget every relief painted for a session: a new render starts afresh."""
+def _set_aside_path(session_id: str, style: str) -> Path:
+    return path_in_session(session_id, f"relief-{style}-set-aside.npy")
+
+
+def clear_relief_edits(session_id: str) -> bool:
+    """Set aside every relief painted for a session: a new render starts afresh, but
+    ``restore_relief_edits`` can bring them back. Return whether there were any."""
+    found = False
     for style in STYLE_LABELS:
-        _edit_path(session_id, style).unlink(missing_ok=True)
+        path = _edit_path(session_id, style)
+        if path.is_file():
+            path.replace(_set_aside_path(session_id, style))
+            found = True
+    return found
+
+
+def restore_relief_edits(session_id: str) -> None:
+    """Bring back the reliefs last set aside. One that no longer fits the mosaic, after
+    a change of size, is left out of the render (see ``Canvas.fit_from_image``)."""
+    for style in STYLE_LABELS:
+        path = _set_aside_path(session_id, style)
+        if path.is_file():
+            path.replace(_edit_path(session_id, style))
 
 
 def build_pdf(
@@ -520,6 +540,7 @@ def build_pdf(
     assembly: str = DEFAULT_ASSEMBLY,
     sharp: bool = False,
     accents: bool = False,
+    improved_visibility: bool = False,
 ) -> Path:
     """Write the build guide for one style as a PDF and return its path."""
     if style not in STYLE_LABELS:
@@ -546,6 +567,7 @@ def build_pdf(
         baseplates=baseplates,
         currency=currency,
         tinted=tinted,
+        improved_visibility=improved_visibility,
         plates=plates,
         lang=current_language(),
         round_tiles=round_tiles,

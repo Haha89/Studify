@@ -159,6 +159,7 @@ class PdfCreator:
         baseplates: str = "official",
         currency: str = "EUR",
         tinted: bool = True,
+        improved_visibility: bool = False,
         plates: Iterable[str] = PLATE_SIZES,
         lang: str = "en",
         round_tiles: bool = False,
@@ -169,6 +170,8 @@ class PdfCreator:
         :param currency: "EUR" or "USD", for the price estimate.
         :param tinted: Tint each stud in a stud map with its brick's colour, so a
             builder can find a colour at a glance. Off saves ink.
+        :param improved_visibility: Larger stud maps, with bigger numbers and thicker
+            lines, and a box to tick for each piece.
         :param plates: The plate sizes to lay the guide out with, from ``PLATE_SIZES``
             (see ``plates.pack_plates``). Just 1x1 gives one plate per stud.
         :param lang: Language of the guide, a ``LABELS`` key.
@@ -176,6 +179,7 @@ class PdfCreator:
             its border from plates up to 1x4, so ``plates`` doesn't apply.
         """
         self.tinted = tinted
+        self.improved_visibility = improved_visibility
         self.round_tiles = round_tiles
         self.plates = ONLY_1X1 if self.round_tiles else plate_sizes(plates)
         self.labels = LABELS[lang]
@@ -357,6 +361,7 @@ class PdfCreator:
             bases=self.get_bases_maps_and_repartition(),
             colors=colors,
             tinted=self.tinted,
+            improved_visibility=self.improved_visibility,
             color_by_id={color["id"]: color for color in colors},
         )
 

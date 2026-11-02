@@ -6,6 +6,7 @@ window.studifyReliefEditor = (function () {
             lower: "Baisser",
             flatten: "Mettre à plat",
             brush: "Pinceau",
+            heightsOnly: "Hauteurs seules",
             undo: "Annuler",
             reset: "Tout effacer",
             apply: "Appliquer",
@@ -18,6 +19,7 @@ window.studifyReliefEditor = (function () {
             lower: "Lower",
             flatten: "Flatten",
             brush: "Brush",
+            heightsOnly: "Heights only",
             undo: "Undo",
             reset: "Clear all",
             apply: "Apply",
@@ -54,6 +56,7 @@ window.studifyReliefEditor = (function () {
         const undo = [];
         let tool = "raise";
         let brush = BRUSHES[1];
+        let heightsOnly = false;
 
         const root = document.createElement("div");
         root.className = "relief-editor";
@@ -75,9 +78,16 @@ window.studifyReliefEditor = (function () {
         const paintStud = function (index) {
             const row = Math.floor(index / cols);
             const col = index % cols;
+            const level = grid[index];
+            if (heightsOnly) {
+                // From pale to dark, whatever the picture's colours; grey where it can't change.
+                const light = 92 - (70 * level) / maxHeight;
+                context.fillStyle = border[index] ? "#b9bdc4" : `hsl(215, 45%, ${light}%)`;
+                context.fillRect(col * scale, row * scale, scale, scale);
+                return;
+            }
             context.fillStyle = palette[colors[index]];
             context.fillRect(col * scale, row * scale, scale, scale);
-            const level = grid[index];
             if (level) {
                 context.fillStyle = `rgba(230, 20, 40, ${0.12 + (0.55 * level) / maxHeight})`;
                 context.fillRect(col * scale, row * scale, scale, scale);
@@ -122,6 +132,13 @@ window.studifyReliefEditor = (function () {
         select.addEventListener("change", () => (brush = Number(select.value)));
         brushes.appendChild(select);
         bar.appendChild(brushes);
+
+        const showHeights = button(words.heightsOnly, function () {
+            heightsOnly = !heightsOnly;
+            showHeights.setAttribute("aria-pressed", String(heightsOnly));
+            paintAll();
+        });
+        showHeights.setAttribute("aria-pressed", "false");
 
         const remember = function () {
             undo.push(grid.slice());

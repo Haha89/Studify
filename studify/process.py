@@ -115,6 +115,7 @@ def process(
     currency: str = "EUR",
     bricklink: bool = False,
     tinted: bool = True,
+    improved_visibility: bool = False,
     plates: Iterable[str] = PLATE_SIZES,
     lang: str = "en",
     round_tiles: bool = False,
@@ -132,6 +133,7 @@ def process(
     :param currency: "EUR" or "USD", for the price estimate.
     :param bricklink: Also write a BrickLink wanted list beside the guide.
     :param tinted: Tint the guide's stud maps with each brick's colour.
+    :param improved_visibility: Print larger maps, and a box to tick for each piece.
     :param plates: Plate sizes for the guide and the wanted list, from ``PLATE_SIZES``.
     :param lang: Language of the guide: "en" or "fr".
     :param round_tiles: Build the picture from round 1x1 tiles, one per stud, and its
@@ -162,6 +164,7 @@ def process(
         baseplates=baseplates,
         currency=currency,
         tinted=tinted,
+        improved_visibility=improved_visibility,
         plates=plates,
         lang=lang,
         round_tiles=round_tiles,

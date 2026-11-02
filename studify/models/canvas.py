@@ -475,7 +475,8 @@ class Canvas:
 
         self.relief = relief
         self.levels = np.full((rows, cols), BACKGROUND, dtype=int)
-        self.painted_heights = heights if heights is not None and heights.shape == (rows, cols) else None
+        fits = relief != "flat" and heights is not None and heights.shape == (rows, cols)
+        self.painted_heights = heights if fits else None
         if relief == "depth":
             # From the untouched picture: retouching flattens what the model reads depth from.
             near = cv2.resize(depth.estimate_depth(original), (src.shape[1], src.shape[0]))

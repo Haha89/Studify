@@ -128,6 +128,11 @@ class TestPaintedHeights:
         assert np.array_equal(layout.heights, painted)
         assert len(layout.supports) == 2
 
+    def test_mean_nothing_on_a_flat_mosaic(self, disc_image):
+        painted = np.full((32, 32), 2, dtype=int)
+        layout = build_canvas(1, disc_image, heights=painted).layout()
+        assert not layout.heights.any() and not layout.supports
+
     def test_that_dont_fit_are_ignored(self, disc_image):
         canvas = build_canvas(1, disc_image, relief="stepped", heights=np.zeros((5, 5), dtype=int))
         assert canvas.layout().heights.any()
