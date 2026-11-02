@@ -119,6 +119,20 @@ def test_shadows_fall_only_on_the_lower_side():
     assert np.array_equal(raised[150:, 150:], flat[150:, 150:])  # Far away.
 
 
+class TestPaintedHeights:
+    def test_replace_what_the_relief_works_out(self, disc_image):
+        painted = np.zeros((32, 32), dtype=int)
+        painted[20:30, 20:30] = 2
+        canvas = build_canvas(1, disc_image, relief="stepped", heights=painted)
+        layout = canvas.layout()
+        assert np.array_equal(layout.heights, painted)
+        assert len(layout.supports) == 2
+
+    def test_that_dont_fit_are_ignored(self, disc_image):
+        canvas = build_canvas(1, disc_image, relief="stepped", heights=np.zeros((5, 5), dtype=int))
+        assert canvas.layout().heights.any()
+
+
 class TestCanvas:
     def test_flat_is_unchanged(self, disc_image):
         canvas = build_canvas(1, disc_image)

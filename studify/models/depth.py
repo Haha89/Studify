@@ -145,14 +145,19 @@ def estimate_depth(rgb: np.ndarray) -> np.ndarray:
 
 
 def depth_heights(depth: np.ndarray) -> np.ndarray:
-    """Return how many plates to stack under each stud, from how near it looks. Each
-    level sits wholly on the one below, and has nothing under 3 studs wide, which would
-    make too thin a stack."""
-    heights = np.zeros(depth.shape, dtype=int)
-    below = np.ones(depth.shape, dtype=np.uint8)
-    for threshold in PLATE_THRESHOLDS:
-        level = np.uint8(depth >= threshold) & below
-        level = cv2.morphologyEx(level, cv2.MORPH_OPEN, _KERNEL) & below
-        heights += level
-        below = level
-    return heights
+    """Return how many plates to stack under each stud, from how near it looks."""
+    heights = sum(np.int64(depth >= threshold) for threshold in PLATE_THRESHOLDS)
+    return clean_heights(heights)
+
+
+def clean_heights(heights: np.ndarray) -> np.ndarray:
+    """Return a grid of plates per stud that can be built: each level sits wholly on
+    the one below, and has nothing under 3 studs wide, which would make too thin a stack."""
+    cleaned = np.zeros(heights.shape, dtype=int)
+    below = np.ones(heights.shape, dtype=np.uint8)
+    for level in range(1, int(heights.max(initial=0)) + 1):
+        layer = np.uint8(heights >= level) & below
+        layer = cv2.morphologyEx(layer, cv2.MORPH_OPEN, _KERNEL) & below
+        cleaned += layer
+        below = layer
+    return cleaned

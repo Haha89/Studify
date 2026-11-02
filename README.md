@@ -96,6 +96,7 @@ uv run studify --gui
 | `--relief depth` | Like `stepped`, but up to 4 hidden plates follow how near each part of the picture looks, guessed by [Depth Anything V2 Small](https://github.com/DepthAnything/Depth-Anything-V2) (Apache-2.0). The 27 MB model downloads on first use, to `~/.cache/studify` (or `STUDIFY_CACHE`), and needs `uv sync --extra depth`. |
 | `--assembly` | What to build on: `baseplates` (default), which need fixing to a rigid board, or `panels`: the pinned 16x16 panels and brick frame of the LEGO Art sets, all in the wanted list and the price. Other sizes are worked out from a 3 x 3 panel set and haven't been built. |
 | `--sharp-edges` | Give each stud the colour covering most of it, so that edges between colours stay sharp, instead of blending into a third colour: for logos and flat graphics. Ignored with `--dither`. |
+| `--accents` | With `--round-tiles`, turn a few golden spots to gold (Metallic Gold, Pearl Gold) and silvery ones to silver (Flat Silver), at most 2 % of the picture, unless a larger area very likely is metal. They shine in the 3D view. Ignored with `--max-colors`. |
 | `--bricklink` | Also write a BrickLink wanted list, `<image-name>-bricklink.xml`, beside the guide. |
 | `--baseplates` | Price `official` LEGO baseplates (default) or cheaper `compatible` ones. |
 | `--currency` | Currency of the price estimate: `EUR` (default) or `USD`. |
@@ -172,6 +173,12 @@ before ordering.
 By default the list and the guide use 1x1, 1x2, 1x3, 1x4 and 2x2 plates wherever a colour
 allows, each within its baseplate, and the stud maps draw each plate as one box. Choose fewer
 with `--plates`; 1x1 always stays, as it is the only plate that fits a lone stud.
+
+## Web app
+
+`uv run studify-web` opens in French or English, from the browser's preferences or the switch at
+the top of the page. With a relief, "Edit the relief" lets you paint how high each stud stands:
+the price, the BrickLink list, the 3D view and the guide all follow. A new render starts afresh.
 
 ## Pieces
 
