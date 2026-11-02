@@ -297,6 +297,27 @@ def depth_download_message() -> str:
     ).format(done=done / 10**6, total=total / 10**6)
 
 
+def _save_preview(session_id: str, style: str, rgb: np.ndarray) -> str:
+    """Keep a style's preview in the session, and return the URL to show it at. It goes
+    over plain HTTP: as base64, three of them make a callback response of many megabytes,
+    which browsers were seen to drop. The timestamp stops them reusing an earlier one."""
+    ok, png = cv2.imencode(".png", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+    if not ok:
+        raise ImageError(_("Impossible de dessiner cette mosaïque."))
+    path_in_session(session_id, f"preview-{style}.png").write_bytes(png.tobytes())
+    return f"/preview/{session_id}/{style}.png?v={time.time_ns()}"
+
+
+def preview_path(session_id: str, style: str) -> Path:
+    """Return where a style's preview is kept."""
+    if style not in STYLE_LABELS:
+        raise ImageError(_("Style inconnu."))
+    path = path_in_session(session_id, f"preview-{style}.png")
+    if not path.is_file():
+        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
+    return path
+
+
 def render_styles(
     session_id: str,
     size: int,
@@ -374,7 +395,7 @@ def render_styles(
             {
                 "style": style,
                 "label": label,
-                "image": data_uri_from_rgb_array(image),
+                "image": _save_preview(session_id, style, image),
                 "round_tiles": round_tiles,
                 "relief": relief,
                 "smooth": round_tiles or relief != "flat",
@@ -494,6 +515,13 @@ def save_relief_edit(session_id: str, style: str, heights: object) -> None:
     grid = np.clip(grid, 0, MAX_PLATES)
     grid[border] = 0
     np.save(_edit_path(session_id, style), clean_heights(grid))
+
+
+def mosaic_key(session_id: str, settings: dict[str, object]) -> dict[str, object]:
+    """Return what makes a mosaic the same one: not how it is priced or printed, which
+    a painted relief doesn't depend on."""
+    ignored = {"baseplates", "currency", "tinted", "improved_visibility"}
+    return {"session": session_id, **{key: value for key, value in settings.items() if key not in ignored}}
 
 
 def _set_aside_path(session_id: str, style: str) -> Path:

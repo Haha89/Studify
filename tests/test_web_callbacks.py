@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 
 import cv2
 import numpy as np
@@ -105,6 +106,7 @@ def generate(
     sharp=False,
     accents=False,
     improved_visibility=False,
+    rendered=None,
 ):
     return fire(
         "generate_styles",
@@ -127,6 +129,7 @@ def generate(
             sharp,
             accents,
             improved_visibility,
+            rendered,
         ],
         "generate.n_clicks",
     )
@@ -414,6 +417,25 @@ class TestReliefEditor:
         assert restored["builds"]["data"]["natural"]["wanted_list"] != before
         assert restored["relief-restore-area"]["style"] == {"display": "none"}
 
+    def test_the_same_mosaic_again_keeps_a_painted_relief(self, fire, source):
+        built = generate(fire, source, relief="stepped")
+        before = built["builds"]["data"]["natural"]["wanted_list"]
+        rendered = built["rendered"]["data"]
+        assert rendered["session"] == source["session"]
+        service.save_relief_edit(source["session"], "natural", [0] * (32 * 32))
+
+        again = generate(fire, source, relief="stepped", rendered=rendered)
+        assert again["builds"]["data"]["natural"]["wanted_list"] != before
+        assert again["relief-status"]["children"] == ""
+
+        # Printing and pricing options don't make it another mosaic.
+        again = generate(fire, source, relief="stepped", currency="USD", improved_visibility=True, rendered=rendered)
+        assert again["builds"]["data"]["natural"]["wanted_list"] != before
+
+        # Anything else does.
+        changed = generate(fire, source, relief="stepped", dither=True, rendered=rendered)
+        assert "retiré" in str(changed["relief-status"]["children"])
+
     def test_nothing_is_said_when_no_relief_was_painted(self, fire, source):
         built = generate(fire, source, relief="stepped")
         assert built["relief-status"]["children"] == ""
@@ -424,6 +446,29 @@ class TestReliefEditor:
         service.save_relief_edit(source["session"], "natural", [0] * (32 * 32))
         built = generate(fire, source)
         assert built["relief-status"]["children"] == ""
+
+
+class TestReload:
+    def test_the_crop_area_comes_back(self, fire, source):
+        out = fire("restore_crop_area", [source, [0.1, 0.2, 0.6, 0.8], None], "source.data")
+        assert out["crop-area"]["style"] == {}
+        assert out["crop-graph"]["figure"]["layout"]["shapes"][0]["x0"] == pytest.approx(0.1 * 80 - 0.5)
+
+    def test_a_crop_area_already_drawn_is_left_alone(self, fire, source):
+        assert fire("restore_crop_area", [source, None, {"data": [{}]}], "source.data") is None
+
+    def test_an_expired_picture_draws_nothing(self, fire):
+        gone = {"session": "0" * 32, "name": "x.png", "width": 8, "height": 8}
+        assert fire("restore_crop_area", [gone, None, None], "source.data") is None
+
+    def test_what_a_reload_needs_is_kept_for_the_session(self, app):
+        layout = str(app.layout())
+        for store in ("source", "crop", "rendered"):
+            assert re.search(
+                rf"id='{store}'[^)]*storage_type='session'|storage_type='session'[^)]*id='{store}'", layout
+            )
+        for control in ("size", "mode", "assembly", "plates", "improved-visibility", "accents"):
+            assert re.search(rf"id='{control}'[^(]*persistence=True", layout) or control in layout
 
 
 class TestLanguage:
