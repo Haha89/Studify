@@ -89,6 +89,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Leave stud maps untinted, to save ink when printing the guide.",
     )
     parser.add_argument(
+        "--improved-visibility",
+        action="store_true",
+        help="Print the guide with larger maps, bigger numbers, thicker lines and a box to tick for each piece.",
+    )
+    parser.add_argument(
         "--plates",
         type=lambda value: value.split(","),
         default=list(PLATE_SIZES),
@@ -211,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
             currency=args.currency,
             bricklink=args.bricklink,
             tinted=not args.plain_maps,
+            improved_visibility=args.improved_visibility,
             plates=args.plates,
             round_tiles=args.round_tiles,
             relief=args.relief,

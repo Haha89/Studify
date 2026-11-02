@@ -286,6 +286,88 @@ figcaption {
     white-space: nowrap;
 }
 
+/* ---------- Improved visibility ---------- */
+
+/* As large as fits across an A4 page: the list of pieces then drops below the map. */
+.improved-visibility .stud-map td,
+.improved-visibility .stud-map th {
+    font-size: 13px;
+    font-weight: 700;
+    height: 20px;
+    width: 20px;
+}
+
+.improved-visibility .stud-map td.border-top {
+    border-top-width: 1.5px;
+}
+
+.improved-visibility .stud-map td.border-bottom {
+    border-bottom-width: 1.5px;
+}
+
+.improved-visibility .stud-map td.border-start {
+    border-left-width: 1.5px;
+}
+
+.improved-visibility .stud-map td.border-end {
+    border-right-width: 1.5px;
+}
+
+.improved-visibility .stud-map td.grid-major-top {
+    border-top-width: 3px;
+}
+
+.improved-visibility .stud-map td.grid-major-bottom {
+    border-bottom-width: 3px;
+}
+
+.improved-visibility .stud-map td.grid-major-start {
+    border-left-width: 3px;
+}
+
+.improved-visibility .stud-map td.grid-major-end {
+    border-right-width: 3px;
+}
+
+.improved-visibility .stud-map-wrap,
+.improved-visibility .brick-list-wrap {
+    flex-basis: 100%;
+}
+
+.improved-visibility .brick-list {
+    font-size: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+
+.improved-visibility .brick-list li {
+    font-size: 0.95rem;
+    padding-right: 1.9rem;
+    position: relative;
+}
+
+.improved-visibility .brick-name {
+    color: var(--color-text);
+    font-size: 0.8rem;
+}
+
+.improved-visibility .brick-id {
+    color: var(--color-text);
+    font-weight: 700;
+}
+
+/* A box to tick on paper, once a piece is placed. */
+.improved-visibility .brick-list li::after {
+    border: 1.5px solid var(--color-text);
+    border-radius: 2px;
+    content: "";
+    height: 0.95rem;
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0.95rem;
+}
+
 /* ---------- Color reference ---------- */
 
 .color-table {
@@ -367,6 +449,12 @@ figcaption {
     .baseplate {
         break-after: page;
         page-break-after: always;
+    }
+
+    /* The list of pieces no longer fits under the larger map: it starts its own page. */
+    .improved-visibility .brick-list-wrap {
+        break-before: page;
+        page-break-before: always;
     }
 
     a[href]::after {

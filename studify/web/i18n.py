@@ -167,6 +167,17 @@ ENGLISH = {
     "Le relief est modifié : le prix, la liste et le guide suivent. Clique sur un style pour le choisir.": (
         "The relief has changed, and the price, list and guide follow. Click a style to choose it."
     ),
+    "Cette génération a retiré le relief que tu avais peint.": "This render removed the relief you had painted.",
+    "Récupérer le relief peint": "Bring back the painted relief",
+    " Générer à nouveau le retirera, mais tu pourras le récupérer.": (
+        " Generating again will remove it, but you'll be able to bring it back."
+    ),
+    "Visibilité améliorée": "Improved visibility",
+    "Dans le guide : des cartes plus grandes, avec des numéros plus gros et des lignes plus épaisses, et une case à "
+    "cocher pour chaque pièce. Le guide compte plus de pages.": (
+        "In the guide: larger maps, with bigger numbers and thicker lines, and a box to tick for each piece. "
+        "The guide runs to more pages."
+    ),
     # Step 4.
     "Télécharge le guide": "Download the guide",
     "Un PDF A4 : l'aperçu, puis une page par baseplate avec la carte des tenons et la liste des pièces.": (

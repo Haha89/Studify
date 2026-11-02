@@ -394,6 +394,14 @@ def _layout() -> dmc.MantineProvider:
                             gap=6,
                         ),
                         dmc.Switch(
+                            id="improved-visibility",
+                            label=_("Visibilité améliorée"),
+                            description=_(
+                                "Dans le guide : des cartes plus grandes, avec des numéros plus gros et des lignes plus "
+                                "épaisses, et une case à cocher pour chaque pièce. Le guide compte plus de pages."
+                            ),
+                        ),
+                        dmc.Switch(
                             id="tinted",
                             label=_("Cartes en couleur"),
                             description=_("Teinte chaque tenon dans le guide. Désactive-le pour économiser l'encre."),
@@ -452,6 +460,11 @@ def _layout() -> dmc.MantineProvider:
         _("Choisis ton style"),
         _("Clique sur l'aperçu qui te plaît. Les lignes marquent les baseplates."),
         html.Div(id="relief-status", className="status"),
+        html.Div(
+            dmc.Button(_("Récupérer le relief peint"), id="relief-restore", variant="light", size="xs", mb="sm"),
+            id="relief-restore-area",
+            style=HIDDEN,
+        ),
         html.Div(id="styles"),
     )
 
@@ -881,6 +894,8 @@ def create_app() -> Dash:
         Output("selected-style", "data"),
         Output("builds", "data"),
         Output("previews", "data"),
+        Output("relief-status", "children", allow_duplicate=True),
+        Output("relief-restore-area", "style"),
         Input("generate", "n_clicks"),
         Input("source", "data"),
         Input("crop", "data"),
@@ -898,6 +913,7 @@ def create_app() -> Dash:
         State("assembly", "value"),
         State("sharp", "checked"),
         State("accents", "checked"),
+        State("improved-visibility", "checked"),
         running=[(Output("generate", "loading"), True, False), (Output("depth-poll", "disabled"), False, True)],
         prevent_initial_call=True,
     )
@@ -919,9 +935,10 @@ def create_app() -> Dash:
         assembly,
         sharp,
         accents,
+        improved_visibility,
     ):
         if not source:
-            return no_update, no_update, no_update, no_update, no_update
+            return (no_update,) * 7
         settings = {
             "size": size,
             "frame": frame,
@@ -939,13 +956,21 @@ def create_app() -> Dash:
             "assembly": assembly,
             "sharp": bool(sharp),
             "accents": bool(accents),
+            "improved_visibility": bool(improved_visibility),
         }
         try:
-            service.clear_relief_edits(source["session"])
+            had_edits = service.clear_relief_edits(source["session"])
             results = service.render_styles(source["session"], **settings)
         except service.ImageError as exc:
-            return _error(str(exc)), None, None, None, None
-        return _cards(results), settings, None, _builds(results), _previews(results)
+            return _error(str(exc)), None, None, None, None, "", HIDDEN
+        # Nothing to restore a relief onto if the new render is flat.
+        lost = had_edits and settings["relief"] != "flat"
+        status = (
+            dmc.Text(_("Cette génération a retiré le relief que tu avais peint."), c="orange", size="sm")
+            if lost
+            else ""
+        )
+        return _cards(results), settings, None, _builds(results), _previews(results), status, {} if lost else HIDDEN
 
     @app.callback(
         Output("relief-modal", "opened"),
@@ -978,26 +1003,31 @@ def create_app() -> Dash:
         Output("selected-style", "data", allow_duplicate=True),
         Output("builds", "data", allow_duplicate=True),
         Output("previews", "data", allow_duplicate=True),
-        Output("relief-status", "children"),
+        Output("relief-status", "children", allow_duplicate=True),
+        Output("relief-restore-area", "style", allow_duplicate=True),
         Input("relief-saved", "data"),
+        Input("relief-restore", "n_clicks"),
         State("source", "data"),
         State("settings", "data"),
         running=[(Output("generate", "loading"), True, False)],
         prevent_initial_call=True,
     )
-    def apply_relief_edit(_saved, source, settings):
+    def apply_relief_edit(_saved, _restore, source, settings):
         if not (source and settings):
             raise PreventUpdate
         try:
+            if ctx.triggered_id == "relief-restore":
+                service.restore_relief_edits(source["session"])
             results = service.render_styles(source["session"], **settings)
         except service.ImageError as exc:
-            return no_update, no_update, no_update, no_update, _error(str(exc))
+            return no_update, no_update, no_update, no_update, _error(str(exc)), no_update
         status = dmc.Text(
-            _("Le relief est modifié : le prix, la liste et le guide suivent. Clique sur un style pour le choisir."),
+            _("Le relief est modifié : le prix, la liste et le guide suivent. Clique sur un style pour le choisir.")
+            + _(" Générer à nouveau le retirera, mais tu pourras le récupérer."),
             c="green",
             size="sm",
         )
-        return _cards(results), None, _builds(results), _previews(results), status
+        return _cards(results), None, _builds(results), _previews(results), status, HIDDEN
 
     # Painted in the browser (see assets/relief_editor.js).
     app.clientside_callback(

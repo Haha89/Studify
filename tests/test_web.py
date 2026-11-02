@@ -448,6 +448,20 @@ class TestReliefEdits:
         assert client.get(f"/relief/{'0' * 32}/natural.json").status_code == 404
 
 
+@pytest.mark.parametrize("improved", [False, True])
+def test_improved_visibility_reaches_only_the_guide(png_bytes, monkeypatch, improved):
+    session = service.save_source(png_bytes, "flag.png")
+    plain = service.render_styles(session, size=1, frame=0, max_colors=None)[0]
+    other = service.render_styles(session, size=1, frame=0, max_colors=None, improved_visibility=improved)[0]
+    assert other["wanted_list"] == plain["wanted_list"] and other["price"] == plain["price"]
+
+    monkeypatch.setattr(pdf_creator, "html_to_pdf", lambda html, pdf: html)
+    html = service.build_pdf(
+        session, size=1, frame=0, max_colors=None, style="natural", improved_visibility=improved
+    ).read_text(encoding="utf-8")
+    assert ('<body class="improved-visibility">' in html) is improved
+
+
 def test_the_guide_follows_the_language(png_bytes, monkeypatch):
     from studify.web.app import create_app
 
