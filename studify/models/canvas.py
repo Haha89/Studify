@@ -37,6 +37,23 @@ LETTERBOX_COLOR = (0, 0, 0)
 FRAME_COLORS = {"black": COLORS["Black"], "white": COLORS["White"]}
 DEFAULT_FRAME_COLOR = "black"
 OUTLINE_COLOR = COLORS["Black"]
+# The metallic colours of round tiles, for a touch of LEGO Art's gold leaf and platinum.
+BRIGHT_GOLD, DARK_GOLD, SILVER = COLORS["Metallic Gold"], COLORS["Pearl Gold"], COLORS["Flat Silver"]
+ACCENT_COLORS = ("Metallic Gold", "Pearl Gold", "Flat Silver")
+# What counts as golden or silvery, on OpenCV's HSV scales (hue 0-179, the rest 0-255).
+GOLD_HUES = (15, 32)
+GOLD_MIN_SATURATION = 90
+GOLD_MIN_VALUE = 90
+BRIGHT_GOLD_MIN_VALUE = 185
+SILVER_MAX_SATURATION = 30
+SILVER_VALUES = (90, 210)
+# Gold and silver stay touches: an area this small can turn, and they cover this share at
+# most, unless an area of any size is very likely metal, going by the three values after.
+ACCENT_SPOT_STUDS = 12
+ACCENT_MAX_SHARE = 0.02
+METAL_MAX_DISTANCE = 14  # CIELAB, from the metal's colour.
+METAL_MIN_SHARE = 0.9  # Of the area, within that distance.
+METAL_MIN_CONTRAST = 15  # Standard deviation of its brightness, 0-255: flat areas aren't shiny.
 # Cap on a preview image's longer side, so a very large mosaic doesn't embed an
 # equally large PNG in the build guide.
 PREVIEW_MAX_DIMENSION = 1200
@@ -74,6 +91,7 @@ class Canvas:
             raise ValueError(f"frame must be between 0 and {DIM_BASE // 2 - 1} studs, got {frame}")
         self.frame = frame
         self.relief = DEFAULT_RELIEF
+        self.painted_heights: np.ndarray | None = None
         # Subject and core grid, or plates per stud for a depth relief. Set by fit_from_image.
         self.levels: np.ndarray | None = None
         # (top, bottom, left, right) of the picture itself within the last resized
@@ -139,7 +157,9 @@ class Canvas:
         """
         heights = np.zeros(self.shape, dtype=int)
         tiles = np.zeros(self.shape, dtype=bool)
-        if self.relief == "stepped":
+        if self.painted_heights is not None:
+            heights = self.painted_heights
+        elif self.relief == "stepped":
             heights = STEPPED_PLATES[self.levels]
         elif self.relief == "depth":
             heights = self.levels
@@ -315,6 +335,57 @@ class Canvas:
         shares = [self.resize_img(np.uint8(nearest == index) * 255) for index in used]
         return used[np.argmax(np.stack(shares), axis=0)]
 
+    def _apply_accents(self, closest: np.ndarray, resized: np.ndarray, palette: list[Brick]) -> list[Brick]:
+        """Turn a few golden and silvery spots to gold and silver, and return the palette
+        with them. An area counts as a spot if it is small. A larger one only turns if it
+        very likely is metal: nearly all of it the colour of the metal, and with the
+        contrast of a shiny surface, which a yellow patch or a grey wall doesn't have."""
+        top, bottom, left, right = self.content_box
+        picture = resized[top:bottom, left:right]
+        hsv = cv2.cvtColor(picture, cv2.COLOR_RGB2HSV)
+        hue, saturation, value = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+        lab = rgb_to_lab(picture.reshape(-1, 3)).reshape(picture.shape)
+        golden = (GOLD_HUES[0] <= hue) & (hue <= GOLD_HUES[1])
+        golden &= (saturation >= GOLD_MIN_SATURATION) & (value >= GOLD_MIN_VALUE)
+        silvery = (saturation <= SILVER_MAX_SATURATION) & (SILVER_VALUES[0] <= value) & (value <= SILVER_VALUES[1])
+
+        spots: list[tuple[float, np.ndarray, tuple[int, int, int] | None]] = []
+        for mask, metals in ((golden, (BRIGHT_GOLD, DARK_GOLD)), (silvery, (SILVER,))):
+            references = rgb_to_lab(np.array(metals))
+            distances = np.linalg.norm(lab[..., None, :] - references, axis=-1).min(axis=-1)
+            count, labels = cv2.connectedComponents(np.uint8(mask), connectivity=8)
+            for number in range(1, count):
+                area = labels == number
+                if area.sum() <= ACCENT_SPOT_STUDS:
+                    spots.append((float(distances[area].mean()), area, metals))
+                elif (distances[area] <= METAL_MAX_DISTANCE).mean() >= METAL_MIN_SHARE and value[
+                    area
+                ].std() >= METAL_MIN_CONTRAST:
+                    spots.append((-1.0, area, metals))  # Sure enough to come first, whatever its size.
+
+        # However many spots there are, only the likeliest stay: gold and silver stay rare.
+        budget = round(picture.shape[0] * picture.shape[1] * ACCENT_MAX_SHARE)
+        chosen: list[tuple[np.ndarray, tuple]] = []
+        for score, area, metals in sorted(spots, key=lambda spot: spot[0]):
+            if score < 0 or area.sum() <= budget:
+                chosen.append((area, metals))
+                if score >= 0:
+                    budget -= int(area.sum())
+        if not chosen:
+            return palette
+
+        palette = list(dict.fromkeys([*palette, *BrickStore.bricks_named(list(ACCENT_COLORS))]))
+        indices = {brick.color: index for index, brick in enumerate(palette)}
+        region = closest[top:bottom, left:right]
+        for area, metals in chosen:
+            if SILVER in metals:
+                region[area] = indices[SILVER]
+            else:
+                bright = value >= BRIGHT_GOLD_MIN_VALUE
+                region[area & bright] = indices[BRIGHT_GOLD]
+                region[area & ~bright] = indices[DARK_GOLD]
+        return palette
+
     def fit_from_image(
         self,
         path: str | Path,
@@ -325,6 +396,8 @@ class Canvas:
         clean_strays: bool = True,
         relief: str = DEFAULT_RELIEF,
         sharp: bool = False,
+        accents: bool = False,
+        heights: np.ndarray | None = None,
     ) -> None:
         """
         Fill the canvas from an image, mapping every pixel to its nearest brick
@@ -350,6 +423,10 @@ class Canvas:
             one nearest the average of what it covers, which turns the edge between
             two colours into a line of a third: for logos and flat graphics. Not with
             ``dither``, which blends on purpose.
+        :param heights: Plates under each stud, painted by hand: these replace whatever
+            the relief would have worked out, if they fit the canvas.
+        :param accents: Turn a few golden and silvery spots to gold and silver (see
+            ``_apply_accents``). Not with ``max_colors``, which they would go over.
         """
         if relief not in RELIEFS:
             raise ValueError(f"Unknown relief {relief!r}; expected one of {list(RELIEFS)}")
@@ -385,6 +462,8 @@ class Canvas:
         elif clean_strays:
             top, bottom, left, right = self.content_box
             closest[top:bottom, left:right] = remove_stray_bricks(closest[top:bottom, left:right], colors)
+        if accents and max_colors is None:
+            palette = self._apply_accents(closest, resized, palette)
         if outlined:
             # Outline in the darkest colour on hand: black, unless the palette lacks it.
             top, bottom, left, right = self.content_box
@@ -396,6 +475,7 @@ class Canvas:
 
         self.relief = relief
         self.levels = np.full((rows, cols), BACKGROUND, dtype=int)
+        self.painted_heights = heights if heights is not None and heights.shape == (rows, cols) else None
         if relief == "depth":
             # From the untouched picture: retouching flattens what the model reads depth from.
             near = cv2.resize(depth.estimate_depth(original), (src.shape[1], src.shape[0]))

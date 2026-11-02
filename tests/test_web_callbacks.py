@@ -103,6 +103,7 @@ def generate(
     relief="flat",
     assembly="baseplates",
     sharp=False,
+    accents=False,
 ):
     return fire(
         "generate_styles",
@@ -123,6 +124,7 @@ def generate(
             "round" if round_tiles else {"stepped": "relief", "depth": "depth"}.get(relief, "flat"),
             assembly,
             sharp,
+            accents,
         ],
         "generate.n_clicks",
     )
@@ -364,10 +366,67 @@ class TestAssembly:
         assert "baseplates" not in detail
 
 
+class TestAccents:
+    def test_reach_the_settings_and_are_ignored_outside_round_tiles(self, fire, source):
+        assert generate(fire, source, accents=True)["settings"]["data"]["accents"] is True
+        assert generate(fire, source, round_tiles=True, accents=True)["styles"]["children"]
+
+
 class TestSharpEdges:
     def test_reaches_the_settings(self, fire, source):
         assert generate(fire, source, sharp=True)["settings"]["data"]["sharp"] is True
         assert generate(fire, source)["settings"]["data"]["sharp"] is False
+
+
+class TestReliefEditor:
+    def test_offered_only_with_a_relief(self, fire, source):
+        assert "style-relief" not in str(generate(fire, source)["styles"]["children"])
+        assert "style-relief" in str(generate(fire, source, relief="stepped")["styles"]["children"])
+
+    def test_opens_on_the_clicked_style(self, fire, source):
+        out = fire("show_relief_editor", [[0, 1, 0], source], wildcard("style-relief", "pop") + ".n_clicks")
+        assert out["relief-modal"]["opened"] is True
+        assert out["relief-url"]["data"] == f"/relief/{source['session']}/pop.json"
+
+    def test_redrawn_cards_open_nothing(self, fire, source):
+        trigger = wildcard("style-relief", "pop") + ".n_clicks"
+        assert fire("show_relief_editor", [[0, 0, 0], source], trigger) is None
+
+    def test_an_edit_changes_the_card_and_the_list_and_a_new_render_forgets_it(self, fire, source):
+        built = generate(fire, source, relief="stepped")
+        settings = built["settings"]["data"]
+        before = built["builds"]["data"]["natural"]["wanted_list"]
+
+        service.save_relief_edit(source["session"], "natural", [0] * (32 * 32))
+        out = fire("apply_relief_edit", [1, source, settings], "relief-saved.data")
+        assert out["builds"]["data"]["natural"]["wanted_list"] != before
+        assert out["selected-style"]["data"] is None
+        assert "suivent" in str(out["relief-status"]["children"])
+
+        again = generate(fire, source, relief="stepped")
+        assert again["builds"]["data"]["natural"]["wanted_list"] == before
+
+
+class TestLanguage:
+    def test_french_by_default_and_english_once_chosen(self, app):
+        client = app.server.test_client()
+        assert "Choisis une image" in client.get("/_dash-layout").get_data(as_text=True)
+        response = client.get("/lang/en")
+        assert response.status_code == 302
+        page = client.get("/_dash-layout").get_data(as_text=True)
+        assert "Choose a picture" in page and "Choisis une image" not in page
+
+    def test_follows_the_browser_until_a_choice_is_made(self, app):
+        client = app.server.test_client()
+        headers = {"Accept-Language": "en-GB,en;q=0.9"}
+        assert "Choose a picture" in client.get("/_dash-layout", headers=headers).get_data(as_text=True)
+        headers = {"Accept-Language": "fr-FR,fr;q=0.9"}
+        assert "Choisis une image" in client.get("/_dash-layout", headers=headers).get_data(as_text=True)
+
+    def test_an_unknown_language_changes_nothing(self, app):
+        client = app.server.test_client()
+        client.get("/lang/xx")
+        assert "Choisis une image" in client.get("/_dash-layout").get_data(as_text=True)
 
 
 class TestViewer:

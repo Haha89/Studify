@@ -125,6 +125,9 @@ BRICKLINK_COLOR_IDS = {
     "White": 1,
     "Yellow": 3,
     "Yellowish Green": 158,
+    # Metallic finishes, for accents on round tiles.
+    "Metallic Gold": 65,
+    "Pearl Gold": 115,
 }
 
 # The plain BrickLink colours each plate is known in, from the "Known Colors" of its
@@ -172,8 +175,8 @@ PART_COLORS = {
         + (86, 88, 89, 90, 97, 103, 104, 105, 110, 120, 150, 152, 153, 154, 156, 157, 158, 220)
     ),
     ROUND_TILE: frozenset(
-        (1, 2, 3, 4, 5, 6, 7, 11, 28, 34, 36, 39, 42, 47, 55, 59, 63, 68, 69, 71, 80, 85, 86, 88, 89, 90, 95)
-        + (103, 104, 105, 110, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220)
+        (1, 2, 3, 4, 5, 6, 7, 11, 28, 34, 36, 39, 42, 47, 55, 59, 63, 65, 68, 69, 71, 80, 85, 86, 88, 89, 90, 95)
+        + (103, 104, 105, 110, 115, 120, 150, 152, 153, 154, 155, 156, 157, 158, 220)
     ),
 }
 

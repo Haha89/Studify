@@ -245,7 +245,7 @@ def test_app_builds_with_every_step():
     pytest.importorskip("dash")
     from studify.web.app import create_app
 
-    layout = str(create_app().layout)
+    layout = str(create_app().layout())
     for component_id in ("upload", "url", "size", "frame", "max-colors", "generate", "styles", "download-pdf"):
         assert f"'{component_id}'" in layout or f'"{component_id}"' in layout
     assert "https://www.bricklink.com/v2/wanted/upload.page" in layout
@@ -363,6 +363,100 @@ def test_model_route_describes_the_latest_render(png_bytes):
 
     assert client.get(f"/model/{'0' * 32}/pop.json").status_code == 404  # unknown session
     assert client.get(f"/model/{session}/baroque.json").status_code == 404
+
+
+def test_model_says_which_colours_are_metallic(tmp_path):
+    img = np.zeros((96, 96, 3), dtype=np.uint8)
+    img[:] = (200, 80, 20)
+    img[30:39, 30:39] = (20, 205, 245)  # A small golden spot.
+    ok, data = cv2.imencode(".png", img)
+    assert ok
+    session = service.save_source(data.tobytes(), "gold.png")
+
+    service.render_styles(session, size=1, frame=0, max_colors=None, round_tiles=True, accents=True)
+    model = service.model_data(session, "natural")
+    assert [model["palette"][index] for index in model["metallic"]] == ["#dbac34"]  # Metallic Gold.
+
+    service.render_styles(session, size=1, frame=0, max_colors=None, round_tiles=True)
+    assert service.model_data(session, "natural")["metallic"] == []
+
+
+class TestReliefEdits:
+    @pytest.fixture
+    def rendered(self, png_bytes):
+        session = service.save_source(png_bytes, "flag.png")
+        service.render_styles(session, size=1, frame=2, max_colors=None, relief="stepped")
+        return session
+
+    def test_the_editor_gets_the_mosaic_and_its_locked_border(self, rendered):
+        data = service.relief_data(rendered, "natural")
+        assert (data["rows"], data["cols"]) == (32, 32)
+        assert len(data["heights"]) == len(data["colors"]) == len(data["border"]) == 32 * 32
+        assert data["border"][0] == 1 and data["border"][16 * 32 + 16] == 0
+        assert data["max_height"] == 4
+
+    def test_an_edit_reaches_the_render_and_the_guide(self, rendered, monkeypatch):
+        grid = np.zeros((32, 32), dtype=int)
+        grid[10:20, 10:20] = 4
+        service.save_relief_edit(rendered, "natural", grid.ravel().tolist())
+
+        service.render_styles(rendered, size=1, frame=2, max_colors=None, relief="stepped")
+        assert np.array_equal(np.array(service.relief_data(rendered, "natural")["heights"]).reshape(32, 32), grid)
+
+        monkeypatch.setattr(pdf_creator, "html_to_pdf", lambda html, pdf: html)
+        html = service.build_pdf(rendered, size=1, frame=2, max_colors=None, style="natural", relief="stepped")
+        assert "couche cachée 4 sur 4" in html.read_text(encoding="utf-8")
+
+    def test_an_edit_applies_only_to_its_style(self, rendered):
+        before = service.relief_data(rendered, "pop")["heights"]
+        service.save_relief_edit(rendered, "natural", [0] * (32 * 32))
+        service.render_styles(rendered, size=1, frame=2, max_colors=None, relief="stepped")
+        assert service.relief_data(rendered, "pop")["heights"] == before
+
+    def test_an_edit_keeps_the_border_flat_limits_height_and_removes_slivers(self, rendered):
+        grid = np.zeros((32, 32), dtype=int)
+        grid[:, 0] = 3  # On the frame.
+        grid[10:20, 10:20] = 99  # Too high.
+        grid[25, 5:25] = 2  # 1 stud wide.
+        service.save_relief_edit(rendered, "natural", grid.ravel().tolist())
+        service.render_styles(rendered, size=1, frame=2, max_colors=None, relief="stepped")
+        saved = np.array(service.relief_data(rendered, "natural")["heights"]).reshape(32, 32)
+        assert not saved[:, 0].any() and not saved[25].any()
+        assert saved[15, 15] == 4
+
+    @pytest.mark.parametrize("bad", [None, "x", [1, 2, 3], [["a"]]])
+    def test_an_edit_that_doesnt_fit_is_refused(self, rendered, bad):
+        with pytest.raises(service.ImageError):
+            service.save_relief_edit(rendered, "natural", bad)
+
+    def test_a_new_render_can_forget_edits(self, rendered):
+        before = service.relief_data(rendered, "natural")["heights"]
+        service.save_relief_edit(rendered, "natural", [0] * (32 * 32))
+        service.clear_relief_edits(rendered)
+        service.render_styles(rendered, size=1, frame=2, max_colors=None, relief="stepped")
+        assert service.relief_data(rendered, "natural")["heights"] == before
+
+    def test_the_route_reads_and_writes(self, rendered):
+        from studify.web.app import create_app
+
+        client = create_app().server.test_client()
+        url = f"/relief/{rendered}/natural.json"
+        assert client.get(url).get_json()["rows"] == 32
+        assert client.post(url, json={"heights": [0] * (32 * 32)}).status_code == 200
+        assert client.post(url, json={"heights": [1]}).status_code == 404
+        assert client.post(url, data="nonsense").status_code == 404
+        assert client.get(f"/relief/{'0' * 32}/natural.json").status_code == 404
+
+
+def test_the_guide_follows_the_language(png_bytes, monkeypatch):
+    from studify.web.app import create_app
+
+    session = service.save_source(png_bytes, "flag.png")
+    monkeypatch.setattr(pdf_creator, "html_to_pdf", lambda html, pdf: html)
+    server = create_app().server
+    with server.test_request_context(headers={"Cookie": "studify-lang=en"}):
+        html = service.build_pdf(session, size=1, frame=0, max_colors=None, style="natural")
+    assert '<html lang="en">' in html.read_text(encoding="utf-8")
 
 
 def test_three_js_is_served_but_not_loaded_with_every_page():

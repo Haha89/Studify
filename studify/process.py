@@ -38,6 +38,8 @@ def build_canvas(
     relief: str = DEFAULT_RELIEF,
     assembly: str = DEFAULT_ASSEMBLY,
     sharp: bool = False,
+    accents: bool = False,
+    heights=None,
 ) -> Canvas:
     """
     Turn an image into a fitted LEGO mosaic, without writing anything.
@@ -66,12 +68,17 @@ def build_canvas(
     :param assembly: What it is built on, from ``assembly.ASSEMBLIES``.
     :param sharp: Keep edges between colours sharp, for logos and flat graphics (see
         ``Canvas.fit_from_image``). Not with ``dither``.
-    :raises ValueError: asking for both round tiles and a relief.
+    :param accents: Turn a few golden and silvery spots to gold and silver: only round
+        tiles come in them here. Not with ``colors``, used as given, or ``max_colors``.
+    :param heights: Plates under each stud, painted by hand, to replace the relief's own.
+    :raises ValueError: asking for both round tiles and a relief, or accents without round tiles.
     :raises depth.DepthError: if a depth relief's model can't be run.
     :return: The fitted canvas.
     """
     if round_tiles and relief != DEFAULT_RELIEF:
         raise ValueError("A relief is built from plates, so can't use round tiles")
+    if accents and not round_tiles:
+        raise ValueError("Gold and silver accents need round tiles")
     canvas = Canvas(size, frame=frame, frame_color=frame_color, assembly=assembly)
     preset = STYLES[style]
     part = ROUND_TILE if round_tiles else TILE_1X1
@@ -92,6 +99,8 @@ def build_canvas(
         clean_strays=clean_strays,
         relief=relief,
         sharp=sharp,
+        accents=accents and not colors,
+        heights=heights,
     )
     return canvas
 

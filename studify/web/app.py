@@ -13,11 +13,12 @@ import dash_mantine_components as dmc
 import plotly.graph_objects as go
 from dash import ALL, Dash, Input, Output, Patch, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
-from flask import Response, abort, jsonify, send_file
+from flask import Response, abort, jsonify, redirect, request, send_file
 
 from studify.models.plates import ONLY_1X1, PLATE_SIZES
 from studify.models.static import DIM_BASE
 from studify.web import service
+from studify.web.i18n import COOKIE, LANGUAGES, _, current_language
 
 SIZES = range(1, 7)  # Baseplates along the longest side.
 FRAMES = range(0, 5)  # Frame width in studs.
@@ -63,6 +64,7 @@ THEME = {
 }
 
 HIDDEN = {"display": "none"}
+LANGUAGE_COOKIE_SECONDS = 365 * 24 * 3600
 BRICKLINK_UPLOAD_URL = "https://www.bricklink.com/v2/wanted/upload.page"
 
 
@@ -100,8 +102,23 @@ def _layout() -> dmc.MantineProvider:
                 justify="center",
                 gap="sm",
             ),
+            dmc.Group(
+                [
+                    dmc.Anchor(
+                        code.upper(),
+                        href=f"/lang/{code}",
+                        size="sm",
+                        fw=700 if code == current_language() else 400,
+                        # Plain browser navigation: this has to reach the server to set the cookie.
+                        refresh=True,
+                    )
+                    for code in LANGUAGES
+                ],
+                justify="center",
+                gap="xs",
+            ),
             dmc.Text(
-                "Transforme ta photo en mosaïque LEGO, avec son guide de montage baseplate par baseplate.",
+                _("Transforme ta photo en mosaïque LEGO, avec son guide de montage baseplate par baseplate."),
                 c="dimmed",
                 ta="center",
                 size="lg",
@@ -113,8 +130,8 @@ def _layout() -> dmc.MantineProvider:
 
     source = _step(
         1,
-        "Choisis une image",
-        "Une photo de famille, ton animal, un portrait… PNG, JPEG ou WebP, 15 Mo max.",
+        _("Choisis une image"),
+        _("Une photo de famille, ton animal, un portrait… PNG, JPEG ou WebP, 15 Mo max."),
         dmc.SimpleGrid(
             [
                 dcc.Upload(
@@ -123,8 +140,8 @@ def _layout() -> dmc.MantineProvider:
                     className="dropzone",
                     children=dmc.Stack(
                         [
-                            dmc.Text("Glisse ton image ici", fw=600),
-                            dmc.Text("ou clique pour parcourir tes fichiers", c="dimmed", size="sm"),
+                            dmc.Text(_("Glisse ton image ici"), fw=600),
+                            dmc.Text(_("ou clique pour parcourir tes fichiers"), c="dimmed", size="sm"),
                         ],
                         gap=2,
                         align="center",
@@ -133,9 +150,9 @@ def _layout() -> dmc.MantineProvider:
                 dmc.Stack(
                     [
                         dmc.TextInput(
-                            id="url", label="Ou colle un lien vers une image", placeholder="https://…", debounce=True
+                            id="url", label=_("Ou colle un lien vers une image"), placeholder="https://…", debounce=True
                         ),
-                        dmc.Button("Charger le lien", id="load-url", variant="light"),
+                        dmc.Button(_("Charger le lien"), id="load-url", variant="light"),
                     ],
                     justify="center",
                     gap="sm",
@@ -152,10 +169,12 @@ def _layout() -> dmc.MantineProvider:
                     [
                         dmc.Stack(
                             [
-                                dmc.Text("Rogner l'image (facultatif)", fw=600, size="sm"),
+                                dmc.Text(_("Rogner l'image (facultatif)"), fw=600, size="sm"),
                                 dmc.Text(
-                                    "Trace un rectangle sur la photo pour ne garder que cette zone. "
-                                    "Tu peux ensuite le déplacer ou l'agrandir.",
+                                    _(
+                                        "Trace un rectangle sur la photo pour ne garder que cette zone. "
+                                        "Tu peux ensuite le déplacer ou l'agrandir."
+                                    ),
                                     c="dimmed",
                                     size="xs",
                                 ),
@@ -166,12 +185,12 @@ def _layout() -> dmc.MantineProvider:
                             [
                                 dmc.SegmentedControl(
                                     id="crop-ratio",
-                                    data=[{"label": label, "value": value} for label, value in CROP_RATIOS],
+                                    data=[{"label": _(label), "value": value} for label, value in CROP_RATIOS],
                                     value="free",
                                     radius="xl",
                                     size="xs",
                                 ),
-                                dmc.Button("Réinitialiser", id="crop-reset", variant="subtle", size="xs"),
+                                dmc.Button(_("Réinitialiser"), id="crop-reset", variant="subtle", size="xs"),
                             ],
                             gap="xs",
                         ),
@@ -194,8 +213,8 @@ def _layout() -> dmc.MantineProvider:
 
     settings = _step(
         2,
-        "Règle la mosaïque",
-        "La taille fixe le prix : chaque baseplate fait 32 × 32 tenons, soit 25,6 cm de côté.",
+        _("Règle la mosaïque"),
+        _("La taille fixe le prix : chaque baseplate fait 32 × 32 tenons, soit 25,6 cm de côté."),
         dmc.Stack(
             [
                 dmc.Stack(
@@ -216,20 +235,23 @@ def _layout() -> dmc.MantineProvider:
                 ),
                 dmc.Stack(
                     [
-                        dmc.Text("Cadre autour de l'image", fw=600, size="sm"),
+                        dmc.Text(_("Cadre autour de l'image"), fw=600, size="sm"),
                         dmc.Slider(
                             id="frame",
                             min=FRAMES[0],
                             max=FRAMES[-1],
                             step=1,
                             value=2,
-                            marks=[{"value": n, "label": "aucun" if n == 0 else f"{n} tenon(s)"} for n in FRAMES],
+                            marks=[
+                                {"value": n, "label": _("aucun") if n == 0 else _("{n} tenon(s)").format(n=n)}
+                                for n in FRAMES
+                            ],
                             restrictToMarks=True,
                             mb="md",
                         ),
                         dmc.SegmentedControl(
                             id="frame-color",
-                            data=[{"label": label, "value": value} for label, value in FRAME_COLOR_CHOICES],
+                            data=[{"label": _(label), "value": value} for label, value in FRAME_COLOR_CHOICES],
                             value="black",
                             radius="xl",
                             style={"alignSelf": "flex-start"},
@@ -239,15 +261,15 @@ def _layout() -> dmc.MantineProvider:
                 ),
                 dmc.Stack(
                     [
-                        dmc.Text("Nombre de couleurs maximum", fw=600, size="sm"),
+                        dmc.Text(_("Nombre de couleurs maximum"), fw=600, size="sm"),
                         dmc.Text(
-                            "Moins de couleurs : plus simple à commander, et un rendu plus graphique.",
+                            _("Moins de couleurs : plus simple à commander, et un rendu plus graphique."),
                             c="dimmed",
                             size="xs",
                         ),
                         dmc.SegmentedControl(
                             id="max-colors",
-                            data=[{"label": label, "value": value} for label, value in COLOR_LIMITS],
+                            data=[{"label": _(label), "value": value} for label, value in COLOR_LIMITS],
                             value="0",
                             radius="xl",
                         ),
@@ -257,17 +279,19 @@ def _layout() -> dmc.MantineProvider:
                 ),
                 dmc.Stack(
                     [
-                        dmc.Text("Palette de couleurs", fw=600, size="sm"),
+                        dmc.Text(_("Palette de couleurs"), fw=600, size="sm"),
                         dmc.Text(
-                            "Les couleurs rares (anciens gris et bruns, pastels…) sont chères et dures à trouver "
-                            "en quantité. Les écarter change peu le rendu et baisse nettement le prix. "
-                            "Le style Pop art garde sa propre palette.",
+                            _(
+                                "Les couleurs rares (anciens gris et bruns, pastels…) sont chères et dures à trouver "
+                                "en quantité. Les écarter change peu le rendu et baisse nettement le prix. "
+                                "Le style Pop art garde sa propre palette."
+                            ),
                             c="dimmed",
                             size="xs",
                         ),
                         dmc.SegmentedControl(
                             id="palette",
-                            data=[{"label": label, "value": value} for label, value in PALETTE_CHOICES],
+                            data=[{"label": _(label), "value": value} for label, value in PALETTE_CHOICES],
                             value="buyable",
                             radius="xl",
                         ),
@@ -279,15 +303,26 @@ def _layout() -> dmc.MantineProvider:
                     [
                         dmc.Switch(
                             id="dither",
-                            label="Tramage",
-                            description="Mélange les couleurs pour simuler celles qui manquent. Plus lent à calculer.",
+                            label=_("Tramage"),
+                            description=_(
+                                "Mélange les couleurs pour simuler celles qui manquent. Plus lent à calculer."
+                            ),
+                        ),
+                        dmc.Switch(
+                            id="accents",
+                            label=_("Accents or et argent"),
+                            description=_(
+                                "En mode Tuiles rondes seulement : quelques touches d'or et d'argent sur les petites zones dorées ou grises. Une grande zone ne change que si c'est très probablement du métal. Sans effet avec une limite de couleurs ou dans les autres modes."
+                            ),
                         ),
                         dmc.Switch(
                             id="sharp",
-                            label="Contours nets",
-                            description="Pour les logos et les aplats : chaque tenon prend la couleur qui le couvre le "
-                            "plus, sans teinte intermédiaire sur les bords. À éviter sur les photos. Sans effet avec "
-                            "le tramage.",
+                            label=_("Contours nets"),
+                            description=_(
+                                "Pour les logos et les aplats : chaque tenon prend la couleur qui le couvre le "
+                                "plus, sans teinte intermédiaire sur les bords. À éviter sur les photos. Sans effet avec "
+                                "le tramage."
+                            ),
                         ),
                         dmc.CheckboxGroup(
                             dmc.Group(
@@ -298,32 +333,36 @@ def _layout() -> dmc.MantineProvider:
                                 mt="xs",
                             ),
                             id="plates",
-                            label="Tailles de tuiles",
-                            description="Moins de pièces à poser avec les grandes tuiles, dans le guide et la liste "
-                            "BrickLink, et un prix estimé plus bas. La 1x1 reste nécessaire pour les tenons isolés.",
+                            label=_("Tailles de tuiles"),
+                            description=_(
+                                "Moins de pièces à poser avec les grandes tuiles, dans le guide et la liste "
+                                "BrickLink, et un prix estimé plus bas. La 1x1 reste nécessaire pour les tenons isolés."
+                            ),
                             value=list(PLATE_SIZES),
                         ),
                         dmc.Stack(
                             [
-                                dmc.Text("Mode", fw=600, size="sm"),
+                                dmc.Text(_("Mode"), fw=600, size="sm"),
                                 dmc.Text(
-                                    "Plat : uniquement des tuiles lisses carrées et rectangulaires, à même hauteur. "
-                                    "Tuiles rondes : une tuile ronde 1x1 par tenon pour l'image, façon LEGO Art, et "
-                                    "le cadre en tuiles lisses 1x4 ; plus de pièces, un prix estimé plus haut, et la "
-                                    "baseplate se voit entre les tuiles, alors choisis-la sombre. Relief : "
-                                    "uniquement des tuiles lisses carrées et rectangulaires, le sujet surélevé sur des "
-                                    "plaques noires cachées, son centre plus haut encore, avec une carte par couche "
-                                    "dans le guide. Le sujet est détecté automatiquement et peut être imprécis ; le "
-                                    "relief n'est pas encore testé avec de vraies briques. "
-                                    "Profondeur : comme Relief, mais un modèle "
-                                    "estime la distance de chaque zone, jusqu'à 4 plaques cachées ; il se "
-                                    "télécharge à la première utilisation (27 Mo).",
+                                    _(
+                                        "Plat : uniquement des tuiles lisses carrées et rectangulaires, à même hauteur. "
+                                        "Tuiles rondes : une tuile ronde 1x1 par tenon pour l'image, façon LEGO Art, et "
+                                        "le cadre en tuiles lisses 1x4 ; plus de pièces, un prix estimé plus haut, et la "
+                                        "baseplate se voit entre les tuiles, alors choisis-la sombre. Relief : "
+                                        "uniquement des tuiles lisses carrées et rectangulaires, le sujet surélevé sur des "
+                                        "plaques noires cachées, son centre plus haut encore, avec une carte par couche "
+                                        "dans le guide. Le sujet est détecté automatiquement et peut être imprécis ; le "
+                                        "relief n'est pas encore testé avec de vraies briques. "
+                                        "Profondeur : comme Relief, mais un modèle "
+                                        "estime la distance de chaque zone, jusqu'à 4 plaques cachées ; il se "
+                                        "télécharge à la première utilisation (27 Mo)."
+                                    ),
                                     c="dimmed",
                                     size="xs",
                                 ),
                                 dmc.SegmentedControl(
                                     id="mode",
-                                    data=[{"label": label, "value": value} for label, value in MODE_CHOICES],
+                                    data=[{"label": _(label), "value": value} for label, value in MODE_CHOICES],
                                     value="flat",
                                     radius="xl",
                                     style={"alignSelf": "flex-start"},
@@ -333,18 +372,20 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Stack(
                             [
-                                dmc.Text("Support", fw=600, size="sm"),
+                                dmc.Text(_("Support"), fw=600, size="sm"),
                                 dmc.Text(
-                                    "Baseplates : moins cher, mais elles ne se relient pas entre elles, il faut les "
-                                    "fixer sur un panneau rigide. Panneaux LEGO Art : les panneaux 16 x 16 à goujons "
-                                    "et le cadre en briques des sets officiels, à accrocher tels quels jusqu'à environ "
-                                    "1 m ; plus cher, toutes les pièces sont dans la liste. Non testé en vrai.",
+                                    _(
+                                        "Baseplates : moins cher, mais elles ne se relient pas entre elles, il faut les "
+                                        "fixer sur un panneau rigide. Panneaux LEGO Art : les panneaux 16 x 16 à goujons "
+                                        "et le cadre en briques des sets officiels, à accrocher tels quels jusqu'à environ "
+                                        "1 m ; plus cher, toutes les pièces sont dans la liste. Non testé en vrai."
+                                    ),
                                     c="dimmed",
                                     size="xs",
                                 ),
                                 dmc.SegmentedControl(
                                     id="assembly",
-                                    data=[{"label": label, "value": value} for label, value in ASSEMBLY_CHOICES],
+                                    data=[{"label": _(label), "value": value} for label, value in ASSEMBLY_CHOICES],
                                     value="baseplates",
                                     radius="xl",
                                     style={"alignSelf": "flex-start"},
@@ -354,8 +395,8 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Switch(
                             id="tinted",
-                            label="Cartes en couleur",
-                            description="Teinte chaque tenon dans le guide. Désactive-le pour économiser l'encre.",
+                            label=_("Cartes en couleur"),
+                            description=_("Teinte chaque tenon dans le guide. Désactive-le pour économiser l'encre."),
                             checked=True,
                         ),
                     ],
@@ -365,15 +406,15 @@ def _layout() -> dmc.MantineProvider:
                     [
                         dmc.Stack(
                             [
-                                dmc.Text("Baseplates", fw=600, size="sm"),
+                                dmc.Text(_("Baseplates"), fw=600, size="sm"),
                                 dmc.Text(
-                                    "Officielles LEGO ≈ 9 € pièce, compatibles ≈ 2 €.",
+                                    _("Officielles LEGO ≈ 9 € pièce, compatibles ≈ 2 €."),
                                     c="dimmed",
                                     size="xs",
                                 ),
                                 dmc.SegmentedControl(
                                     id="baseplates",
-                                    data=[{"label": label, "value": value} for label, value in BASEPLATE_CHOICES],
+                                    data=[{"label": _(label), "value": value} for label, value in BASEPLATE_CHOICES],
                                     value="official",
                                     radius="xl",
                                 ),
@@ -382,11 +423,11 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Stack(
                             [
-                                dmc.Text("Devise", fw=600, size="sm"),
-                                dmc.Text("Pour l'estimation du prix.", c="dimmed", size="xs"),
+                                dmc.Text(_("Devise"), fw=600, size="sm"),
+                                dmc.Text(_("Pour l'estimation du prix."), c="dimmed", size="xs"),
                                 dmc.SegmentedControl(
                                     id="currency",
-                                    data=[{"label": label, "value": value} for label, value in CURRENCY_CHOICES],
+                                    data=[{"label": _(label), "value": value} for label, value in CURRENCY_CHOICES],
                                     value="EUR",
                                     radius="xl",
                                 ),
@@ -397,7 +438,7 @@ def _layout() -> dmc.MantineProvider:
                     gap="xl",
                     align="flex-start",
                 ),
-                dmc.Group(dmc.Button("Générer les styles", id="generate", size="md", disabled=True), mt="sm"),
+                dmc.Group(dmc.Button(_("Générer les styles"), id="generate", size="md", disabled=True), mt="sm"),
                 html.Div(id="depth-status", className="status"),
                 # Only runs while the styles are being made.
                 dcc.Interval(id="depth-poll", interval=1000, disabled=True),
@@ -408,20 +449,25 @@ def _layout() -> dmc.MantineProvider:
 
     styles = _step(
         3,
-        "Choisis ton style",
-        "Clique sur l'aperçu qui te plaît. Les lignes marquent les baseplates.",
+        _("Choisis ton style"),
+        _("Clique sur l'aperçu qui te plaît. Les lignes marquent les baseplates."),
+        html.Div(id="relief-status", className="status"),
         html.Div(id="styles"),
     )
 
     download = _step(
         4,
-        "Télécharge le guide",
-        "Un PDF A4 : l'aperçu, puis une page par baseplate avec la carte des tenons et la liste des pièces.",
+        _("Télécharge le guide"),
+        _("Un PDF A4 : l'aperçu, puis une page par baseplate avec la carte des tenons et la liste des pièces."),
         dmc.Group(
             [
-                dmc.Button("Télécharger le PDF", id="download-pdf", size="md", disabled=True),
-                dmc.Button("Copier la liste BrickLink", id="copy-bricklink", size="md", variant="light", disabled=True),
-                dmc.Button("Télécharger la liste", id="download-bricklink", size="md", variant="subtle", disabled=True),
+                dmc.Button(_("Télécharger le PDF"), id="download-pdf", size="md", disabled=True),
+                dmc.Button(
+                    _("Copier la liste BrickLink"), id="copy-bricklink", size="md", variant="light", disabled=True
+                ),
+                dmc.Button(
+                    _("Télécharger la liste"), id="download-bricklink", size="md", variant="subtle", disabled=True
+                ),
                 html.Div(id="copy-status"),
                 html.Div(id="pdf-status"),
             ],
@@ -429,10 +475,12 @@ def _layout() -> dmc.MantineProvider:
         ),
         dmc.Text(
             [
-                "La liste BrickLink contient les pièces choisies et le rab, sans les baseplates. Copie-la, "
-                "puis colle-la sur la ",
-                dmc.Anchor("page d'import BrickLink", href=BRICKLINK_UPLOAD_URL, target="_blank", size="xs"),
-                ", option « Upload BrickLink XML format ».",
+                _(
+                    "La liste BrickLink contient les pièces choisies et le rab, sans les baseplates. Copie-la, "
+                    "puis colle-la sur la "
+                ),
+                dmc.Anchor(_("page d'import BrickLink"), href=BRICKLINK_UPLOAD_URL, target="_blank", size="xs"),
+                _(", option « Upload BrickLink XML format »."),
             ],
             c="dimmed",
             size="xs",
@@ -461,8 +509,10 @@ def _layout() -> dmc.MantineProvider:
                 dmc.Modal(
                     [
                         dmc.Text(
-                            "Glisse pour tourner, molette ou deux doigts pour zoomer, double-clic pour revenir. "
-                            "Cadre et pièces du dos simplifiés.",
+                            _(
+                                "Glisse pour tourner, molette ou deux doigts pour zoomer, double-clic pour revenir. "
+                                "Dos et accroches approximatifs."
+                            ),
                             c="dimmed",
                             size="xs",
                             mb="sm",
@@ -472,7 +522,12 @@ def _layout() -> dmc.MantineProvider:
                     id="viewer-modal",
                     fullScreen=True,
                 ),
+                dcc.Store(id="lang", data=current_language()),
                 dcc.Store(id="viewer-url"),
+                dmc.Modal(html.Div(id="relief-stage", className="relief-stage"), id="relief-modal", fullScreen=True),
+                dcc.Store(id="relief-url"),
+                dcc.Store(id="relief-done"),
+                dcc.Store(id="relief-saved"),
                 dcc.Store(id="viewer-done"),
                 dmc.Modal(
                     [
@@ -497,8 +552,9 @@ def _layout() -> dmc.MantineProvider:
 
 
 def _price_detail(prices: dict[str, object]) -> str:
-    baseplates = "" if prices["price_baseplates"].startswith("0 ") else f" · baseplates {prices['price_baseplates']}"
-    return f"Pièces {prices['price_bricks']} (+5 % de rab){baseplates}"
+    has_baseplates = not prices["price_baseplates"].startswith("0 ")
+    baseplates = _(" · baseplates {price}").format(price=prices["price_baseplates"]) if has_baseplates else ""
+    return _("Pièces {price} (+5 % de rab)").format(price=prices["price_bricks"]) + baseplates
 
 
 def _pieces(result: dict[str, object]) -> str:
@@ -506,10 +562,10 @@ def _pieces(result: dict[str, object]) -> str:
     tiles, supports = result["round_tile_count"], result["support_count"]
     plates = result["plates"] - tiles - supports
     kinds = [
-        (tiles, "tuiles rondes"),
-        (plates, "tuiles de bordure" if result["round_tiles"] else "tuiles"),
-        (supports, "plaques cachées"),
-        (result["assembly_count"], "pièces d'assemblage"),
+        (tiles, _("tuiles rondes")),
+        (plates, _("tuiles de bordure") if result["round_tiles"] else _("tuiles")),
+        (supports, _("plaques cachées")),
+        (result["assembly_count"], _("pièces d'assemblage")),
     ]
     return " + ".join(f"{count:,} {name}" for count, name in kinds if count).replace(",", " ")
 
@@ -529,22 +585,34 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 dmc.Group(
                     [
                         dmc.Button(
-                            "Agrandir",
+                            _("Agrandir"),
                             id={"type": "style-enlarge", "index": style},
                             variant="subtle",
                             size="compact-xs",
                         ),
                         dmc.Button(
-                            "Rendu réaliste",
+                            _("Rendu réaliste"),
                             id={"type": "style-realistic", "index": style},
                             variant="subtle",
                             size="compact-xs",
                         ),
                         dmc.Button(
-                            "Vue 3D",
+                            _("Vue 3D"),
                             id={"type": "style-3d", "index": style},
                             variant="subtle",
                             size="compact-xs",
+                        ),
+                        *(
+                            [
+                                dmc.Button(
+                                    _("Modifier le relief"),
+                                    id={"type": "style-relief", "index": style},
+                                    variant="subtle",
+                                    size="compact-xs",
+                                )
+                            ]
+                            if result["relief"] != "flat"
+                            else []
                         ),
                     ],
                     gap="xs",
@@ -552,18 +620,19 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 ),
                 dmc.Group(
                     [
-                        dmc.Text(result["label"], fw=700, size="lg"),
-                        dmc.Badge(f"{result['colors']} couleurs", variant="light"),
+                        dmc.Text(_(result["label"]), fw=700, size="lg"),
+                        dmc.Badge(_("{count} couleurs").format(count=result["colors"]), variant="light"),
                     ],
                     justify="space-between",
                     mt="md",
                 ),
                 dmc.Text(
-                    f"{result['studs']} tenons · "
+                    _("{studs} tenons").format(studs=result["studs"])
+                    + " · "
                     + (
-                        f"{result['baseplates'] * 4} panneaux"
+                        _("{count} panneaux").format(count=result["baseplates"] * 4)
                         if result["assembly"] == "panels"
-                        else f"{result['baseplates']} baseplate(s)"
+                        else _("{count} baseplate(s)").format(count=result["baseplates"])
                     ),
                     c="dimmed",
                     size="sm",
@@ -571,7 +640,9 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 dmc.Text(
                     _pieces(result)
                     if result["round_tiles"] or result["relief"] != "flat" or result["assembly"] != "baseplates"
-                    else f"{bricks} briques" + f", soit {result['plates']:,} tuiles".replace(",", " "),
+                    else _("{bricks} briques, soit {tiles} tuiles").format(
+                        bricks=bricks, tiles=f"{result['plates']:,}".replace(",", " ")
+                    ),
                     c="dimmed",
                     size="sm",
                 ),
@@ -579,7 +650,7 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 dmc.Group(
                     [
                         dmc.Text(result["price"], id={"type": "style-price", "index": style}, fw=700, size="lg"),
-                        dmc.Text("hors livraison", c="dimmed", size="xs"),
+                        dmc.Text(_("hors livraison"), c="dimmed", size="xs"),
                     ],
                     justify="space-between",
                     align="baseline",
@@ -590,7 +661,9 @@ def _style_card(result: dict[str, object]) -> html.Div:
                 *(
                     [
                         dmc.Alert(
-                            f"Couleurs rares, chères ou difficiles à trouver : {', '.join(result['rare_colors'])}",
+                            _("Couleurs rares, chères ou difficiles à trouver : {colors}").format(
+                                colors=", ".join(result["rare_colors"])
+                            ),
                             color="orange",
                             variant="light",
                             radius="md",
@@ -612,6 +685,26 @@ def _style_card(result: dict[str, object]) -> html.Div:
         className="style-card",
         n_clicks=0,
     )
+
+
+def _cards(results: list[dict[str, object]]) -> dmc.SimpleGrid:
+    return dmc.SimpleGrid([_style_card(result) for result in results], cols={"base": 1, "sm": 3}, spacing="lg")
+
+
+def _builds(results: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    return {
+        r["style"]: {
+            "distribution": r["distribution"],
+            "baseplates": r["priced_baseplates"],
+            "wanted_list": r["wanted_list"],
+            "parts": r["parts"],
+        }
+        for r in results
+    }
+
+
+def _previews(results: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    return {r["style"]: {"image": r["image"], "label": r["label"], "smooth": r["smooth"]} for r in results}
 
 
 def _crop_figure(image_uri: str, width: int, height: int) -> go.Figure:
@@ -693,7 +786,14 @@ def next_crop_box(
 def create_app() -> Dash:
     # Three.js is an ES module, which viewer.js imports when needed: not a page script.
     app = Dash(__name__, title="Studify", assets_ignore=r"^three\.")
-    app.layout = _layout()
+    app.layout = _layout  # Called for each request: it depends on the language.
+
+    @app.server.route("/lang/<code>")
+    def set_language(code):
+        response = redirect("/")
+        if code in LANGUAGES:
+            response.set_cookie(COOKIE, code, max_age=LANGUAGE_COOKIE_SECONDS, samesite="Lax")
+        return response
 
     @app.callback(
         Output("source", "data"),
@@ -723,7 +823,7 @@ def create_app() -> Dash:
         except service.ImageError as exc:
             return no_update, no_update, no_update, no_update, _error(str(exc))
         image_uri, width, height = service.preview(service.source_path(session))
-        status = dmc.Text(f"Image chargée : {name}", c="green", size="sm", fw=500)
+        status = dmc.Text(_("Image chargée : {name}").format(name=name), c="green", size="sm", fw=500)
         source = {"session": session, "name": name, "width": width, "height": height}
         return source, _crop_figure(image_uri, width, height), {}, None, status
 
@@ -758,15 +858,17 @@ def create_app() -> Dash:
     @app.callback(Output("crop-status", "children"), Input("crop", "data"))
     def describe_crop(crop):
         if not crop:
-            return "Image entière."
+            return _("Image entière.")
         left, top, right, bottom = crop
-        return f"Zone gardée : {(right - left) * 100:.0f} % de la largeur × {(bottom - top) * 100:.0f} % de la hauteur."
+        return _("Zone gardée : {width:.0f} % de la largeur × {height:.0f} % de la hauteur.").format(
+            width=(right - left) * 100, height=(bottom - top) * 100
+        )
 
     @app.callback(Output("size-label", "children"), Input("size", "value"))
     def describe_size(size):
         studs = size * DIM_BASE
-        return (
-            f"Taille : {size} baseplate(s) sur le plus grand côté, soit {studs} tenons ≈ {studs * STUD_MM / 10:.0f} cm"
+        return _("Taille : {size} baseplate(s) sur le plus grand côté, soit {studs} tenons ≈ {cm:.0f} cm").format(
+            size=size, studs=studs, cm=studs * STUD_MM / 10
         )
 
     @app.callback(Output("generate", "disabled"), Input("source", "data"))
@@ -795,6 +897,7 @@ def create_app() -> Dash:
         State("mode", "value"),
         State("assembly", "value"),
         State("sharp", "checked"),
+        State("accents", "checked"),
         running=[(Output("generate", "loading"), True, False), (Output("depth-poll", "disabled"), False, True)],
         prevent_initial_call=True,
     )
@@ -815,6 +918,7 @@ def create_app() -> Dash:
         mode,
         assembly,
         sharp,
+        accents,
     ):
         if not source:
             return no_update, no_update, no_update, no_update, no_update
@@ -834,23 +938,85 @@ def create_app() -> Dash:
             "relief": {"relief": "stepped", "depth": "depth"}.get(mode, "flat"),
             "assembly": assembly,
             "sharp": bool(sharp),
+            "accents": bool(accents),
         }
         try:
+            service.clear_relief_edits(source["session"])
             results = service.render_styles(source["session"], **settings)
         except service.ImageError as exc:
             return _error(str(exc)), None, None, None, None
-        cards = dmc.SimpleGrid([_style_card(result) for result in results], cols={"base": 1, "sm": 3}, spacing="lg")
-        builds = {
-            r["style"]: {
-                "distribution": r["distribution"],
-                "baseplates": r["priced_baseplates"],
-                "wanted_list": r["wanted_list"],
-                "parts": r["parts"],
+        return _cards(results), settings, None, _builds(results), _previews(results)
+
+    @app.callback(
+        Output("relief-modal", "opened"),
+        Output("relief-modal", "title"),
+        Output("relief-url", "data"),
+        Input({"type": "style-relief", "index": ALL}, "n_clicks"),
+        State("source", "data"),
+        prevent_initial_call=True,
+    )
+    def show_relief_editor(clicks, source):
+        # Cards being (re)drawn also fires this, with no clicks: ignore that.
+        if not ctx.triggered_id or not any(clicks) or not source:
+            raise PreventUpdate
+        style = ctx.triggered_id["index"]
+        url = f"/relief/{source['session']}/{style}.json"
+        return True, _("{style} : modifier le relief").format(style=_(service.STYLE_LABELS[style])), url
+
+    @app.server.route("/relief/<session_id>/<style>.json", methods=["GET", "POST"])
+    def serve_relief(session_id, style):
+        try:
+            if request.method == "POST":
+                service.save_relief_edit(session_id, style, (request.get_json(silent=True) or {}).get("heights"))
+                return jsonify({"saved": True})
+            return jsonify(service.relief_data(session_id, style))
+        except service.ImageError:
+            abort(404)
+
+    @app.callback(
+        Output("styles", "children", allow_duplicate=True),
+        Output("selected-style", "data", allow_duplicate=True),
+        Output("builds", "data", allow_duplicate=True),
+        Output("previews", "data", allow_duplicate=True),
+        Output("relief-status", "children"),
+        Input("relief-saved", "data"),
+        State("source", "data"),
+        State("settings", "data"),
+        running=[(Output("generate", "loading"), True, False)],
+        prevent_initial_call=True,
+    )
+    def apply_relief_edit(_saved, source, settings):
+        if not (source and settings):
+            raise PreventUpdate
+        try:
+            results = service.render_styles(source["session"], **settings)
+        except service.ImageError as exc:
+            return no_update, no_update, no_update, no_update, _error(str(exc))
+        status = dmc.Text(
+            _("Le relief est modifié : le prix, la liste et le guide suivent. Clique sur un style pour le choisir."),
+            c="green",
+            size="sm",
+        )
+        return _cards(results), None, _builds(results), _previews(results), status
+
+    # Painted in the browser (see assets/relief_editor.js).
+    app.clientside_callback(
+        """
+        function (url, opened, language) {
+            if (opened && url) {
+                window.studifyReliefEditor.show("relief-stage", url, language);
+            } else {
+                window.studifyReliefEditor.hide();
             }
-            for r in results
+            return null;
         }
-        previews = {r["style"]: {"image": r["image"], "label": r["label"], "smooth": r["smooth"]} for r in results}
-        return cards, settings, None, builds, previews
+        """,
+        Output("relief-done", "data"),
+        Input("relief-url", "data"),
+        Input("relief-modal", "opened"),
+        State("lang", "data"),
+        prevent_initial_call=True,
+    )
 
     @app.callback(
         Output("preview-modal", "opened"),
@@ -867,7 +1033,7 @@ def create_app() -> Dash:
             raise PreventUpdate
         preview = previews[ctx.triggered_id["index"]]
         image_class = "preview-image smooth" if preview["smooth"] else "preview-image"
-        return True, preview["label"], preview["image"], image_class
+        return True, _(preview["label"]), preview["image"], image_class
 
     @app.server.route("/realistic/<session_id>/<style>.png")
     def serve_realistic(session_id, style):
@@ -897,12 +1063,13 @@ def create_app() -> Dash:
         url = f"/realistic/{source['session']}/{style}.png?v={time.time_ns()}"
         settings = settings or {}
         if settings.get("round_tiles"):
-            note = "Une tuile ronde par tenon, sur une baseplate sombre."
+            note = _("Une tuile ronde par tenon, sur une baseplate sombre.")
         else:
-            note = "Tuiles lisses, carrées et rectangulaires, comme dans le guide et la liste BrickLink."
+            note = _("Tuiles lisses, carrées et rectangulaires, comme dans le guide et la liste BrickLink.")
         if settings.get("relief") in ("stepped", "depth"):
-            note += " Le sujet est surélevé sur des plaques noires cachées."
-        return True, f"{service.STYLE_LABELS[style]} : rendu réaliste", url, f"{note} Clique sur l'image pour zoomer."
+            note += _(" Le sujet est surélevé sur des plaques noires cachées.")
+        title = _("{style} : rendu réaliste").format(style=_(service.STYLE_LABELS[style]))
+        return True, title, url, note + _(" Clique sur l'image pour zoomer.")
 
     @app.callback(
         Output("depth-status", "children"),
@@ -947,14 +1114,14 @@ def create_app() -> Dash:
         style = ctx.triggered_id["index"]
         # The timestamp stops the browser reusing the model of an earlier render.
         url = f"/model/{source['session']}/{style}.json?v={time.time_ns()}"
-        return True, f"{service.STYLE_LABELS[style]} : vue 3D", url
+        return True, _("{style} : vue 3D").format(style=_(service.STYLE_LABELS[style])), url
 
     # Drawn in the browser (see assets/viewer.js), and freed as soon as the window closes.
     app.clientside_callback(
         """
-        function (url, opened) {
+        function (url, opened, language) {
             if (opened && url) {
-                window.studifyViewer.show("viewer-stage", url);
+                window.studifyViewer.show("viewer-stage", url, language);
             } else {
                 window.studifyViewer.hide();
             }
@@ -964,6 +1131,7 @@ def create_app() -> Dash:
         Output("viewer-done", "data"),
         Input("viewer-url", "data"),
         Input("viewer-modal", "opened"),
+        State("lang", "data"),
         prevent_initial_call=True,
     )
 
@@ -1073,7 +1241,7 @@ def create_app() -> Dash:
         # The timestamp makes the URL change on every build, so the download re-triggers.
         url = f"/guide/{source['session']}/{style}.pdf?v={time.time_ns()}"
         status = dmc.Text(
-            ["Guide prêt. Le téléchargement ne démarre pas ? ", dmc.Anchor("Clique ici", href=url)],
+            [_("Guide prêt. Le téléchargement ne démarre pas ? "), dmc.Anchor(_("Clique ici"), href=url)],
             c="green",
             size="sm",
         )
@@ -1082,13 +1250,16 @@ def create_app() -> Dash:
     # The clipboard is only reachable from the browser, and the list is already there.
     app.clientside_callback(
         """
-        async function (clicks, builds, style) {
+        async function (clicks, builds, style, language) {
             if (!clicks || !builds || !style) { return window.dash_clientside.no_update; }
+            const english = language === "en";
             try {
                 await navigator.clipboard.writeText(builds[style].wanted_list);
-                return "Liste copiée : colle-la sur BrickLink.";
+                return english ? "List copied: paste it on BrickLink." : "Liste copiée : colle-la sur BrickLink.";
             } catch (error) {
-                return "Copie impossible ici : télécharge plutôt la liste.";
+                return english
+                    ? "Can't copy here: download the list instead."
+                    : "Copie impossible ici : télécharge plutôt la liste.";
             }
         }
         """,
@@ -1096,6 +1267,7 @@ def create_app() -> Dash:
         Input("copy-bricklink", "n_clicks"),
         State("builds", "data"),
         State("selected-style", "data"),
+        State("lang", "data"),
         prevent_initial_call=True,
     )
 

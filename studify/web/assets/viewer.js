@@ -21,8 +21,12 @@ window.studifyViewer = (function () {
     const PANEL_STUDS = 16;
     const PANEL_HEIGHT = 1.6; // 1 1/3 bricks.
     const FRAME_WIDTH = 1;
-    const FRAME_BELOW = PANEL_HEIGHT + PLATE_HEIGHT; // Down to the plates under the panels' edge.
-    const FRAME_ABOVE = 1.6; // A course of bricks and its tiles.
+    const BRICK_HEIGHT = 1.2;
+    // The frame's layers, by their middles: plates under the panels' level, then two courses.
+    const PLATE_Y = -PANEL_HEIGHT - PLATE_HEIGHT / 2;
+    const LOWER_COURSE_Y = -PANEL_HEIGHT + BRICK_HEIGHT / 2;
+    const UPPER_COURSE_Y = LOWER_COURSE_Y + BRICK_HEIGHT;
+    const TILE_Y = UPPER_COURSE_Y + BRICK_HEIGHT / 2 + PLATE_HEIGHT / 2;
     const EXPLODED_GAP = 5; // Studs between parts in the exploded view.
     const EXPLODED_ZOOM = 1.45;
     const PINS_PER_JOIN = 3;
@@ -32,6 +36,23 @@ window.studifyViewer = (function () {
     const HANGER_WIDTH = 5;
     const HANGER_DEPTH = 3;
     const HANGER_HEIGHT = 0.8;
+    const METAL = {metalness: 0.95, roughness: 0.28, envMapIntensity: 1.8};
+    const WORDS = {
+        fr: {
+            front: "Face",
+            back: "Dos",
+            exploded: "Vue éclatée",
+            loading: "Préparation de la vue 3D…",
+            failed: "Vue 3D impossible : recharge la page, ou essaie un autre navigateur.",
+        },
+        en: {
+            front: "Front",
+            back: "Back",
+            exploded: "Exploded view",
+            loading: "Preparing the 3D view…",
+            failed: "3D view not possible: reload the page, or try another browser.",
+        },
+    };
 
     let current = null;
     let request = 0; // Lets a slow load notice that it has been replaced.
@@ -64,8 +85,37 @@ window.studifyViewer = (function () {
         message.hidden = !text;
     }
 
-    function instances(THREE, scene, geometry, count, castShadow, fill) {
-        const material = new THREE.MeshStandardMaterial({roughness: 0.45, metalness: 0});
+    function reflections(THREE, renderer) {
+        // Metal looks black with nothing to reflect: give it a soft room, brighter overhead.
+        const room = new THREE.Scene();
+        room.background = new THREE.Color(0x8d939c);
+        const panel = function (color, x, y, z, size) {
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(size, size, size),
+                new THREE.MeshBasicMaterial({color: new THREE.Color(color).multiplyScalar(6)})
+            );
+            mesh.position.set(x, y, z);
+            room.add(mesh);
+            return mesh;
+        };
+        const meshes = [
+            panel(0xffffff, -6, 10, -6, 7),
+            panel(0xfff4e0, 9, 6, 2, 4),
+            panel(0xdfe8ff, -9, 3, 7, 4),
+            panel(0x3a3f46, 0, -10, 0, 12),
+        ];
+        const generator = new THREE.PMREMGenerator(renderer);
+        const target = generator.fromScene(room, 0.04);
+        generator.dispose();
+        meshes.forEach(function (mesh) {
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+        });
+        return target;
+    }
+
+    function instances(THREE, scene, geometry, count, castShadow, fill, finish) {
+        const material = new THREE.MeshStandardMaterial({roughness: 0.45, metalness: 0, ...finish});
         const mesh = new THREE.InstancedMesh(geometry, material, count);
         const matrix = new THREE.Matrix4();
         const color = new THREE.Color();
@@ -88,9 +138,61 @@ window.studifyViewer = (function () {
         });
     }
 
+    function frameParts(rows, cols) {
+        // The frame of LEGO's own panel sets (31197's instructions), side by side: on 2-wide
+        // plates half under the panels, a course of bricks with pins into the panels, then
+        // a course of 1 x 16s and tiles on top. Its parts add up to ``assembly_parts``.
+        const parts = [];
+        const out = FRAME_WIDTH / 2;
+        const side = function (length, toBox) {
+            const run = function (from, to, y, tall, wide) {
+                parts.push(toBox((from + to) / 2, y, to - from - SEAM, tall, wide));
+            };
+            const panels = length / PANEL_STUDS;
+            // Plates: a 2 x 12, then 2 x 16s, leaving the corners to the 3 x 3s.
+            run(2, 14, PLATE_Y, PLATE_HEIGHT, 2);
+            for (let at = 14; at < length - 2; at += PANEL_STUDS) {
+                run(at, at + PANEL_STUDS, PLATE_Y, PLATE_HEIGHT, 2);
+            }
+            for (let panel = 0; panel < panels; panel++) {
+                const start = panel * PANEL_STUDS;
+                run(start + 2, start + 4, LOWER_COURSE_Y, BRICK_HEIGHT, FRAME_WIDTH); // Brick with pin.
+                run(start + 4, start + 12, LOWER_COURSE_Y, BRICK_HEIGHT, FRAME_WIDTH); // 1 x 8.
+                run(start + 12, start + 14, LOWER_COURSE_Y, BRICK_HEIGHT, FRAME_WIDTH); // Brick with pin.
+                if (panel + 1 < panels) {
+                    run(start + 14, start + 18, LOWER_COURSE_Y, BRICK_HEIGHT, FRAME_WIDTH); // 1 x 4.
+                }
+                run(start, start + PANEL_STUDS, UPPER_COURSE_Y, BRICK_HEIGHT, FRAME_WIDTH); // 1 x 16.
+            }
+            run(1, 4, TILE_Y, PLATE_HEIGHT, FRAME_WIDTH); // 1 x 3.
+            for (let at = 4; at < length - 4; at += 8) {
+                run(at, at + 8, TILE_Y, PLATE_HEIGHT, FRAME_WIDTH); // 1 x 8.
+            }
+            run(length - 4, length - 1, TILE_Y, PLATE_HEIGHT, FRAME_WIDTH); // 1 x 3.
+        };
+        // Each part's middle, in from the edge: 2-wide plates reach one stud under the panels.
+        const inset = (wide) => (wide > FRAME_WIDTH ? out : 0);
+        side(cols, (x, y, length, tall, wide) => [x, y, -out + inset(wide), length, tall, wide]);
+        side(cols, (x, y, length, tall, wide) => [x, y, rows + out - inset(wide), length, tall, wide]);
+        side(rows, (z, y, length, tall, wide) => [-out + inset(wide), y, z, wide, tall, length]);
+        side(rows, (z, y, length, tall, wide) => [cols + out - inset(wide), y, z, wide, tall, length]);
+
+        // The corners: a 3 x 3 plate, a corner brick, 1 x 1s and a corner plate on top.
+        for (const [x, xIn] of [[-out, 1], [cols + out, -1]]) {
+            for (const [z, zIn] of [[-out, 1], [rows + out, -1]]) {
+                parts.push([x + xIn, PLATE_Y, z + zIn, 3 - SEAM, PLATE_HEIGHT, 3 - SEAM]);
+                parts.push([x + xIn / 2, LOWER_COURSE_Y, z, 2 - SEAM, BRICK_HEIGHT, FRAME_WIDTH - SEAM]);
+                parts.push([x, LOWER_COURSE_Y, z + zIn / 2, FRAME_WIDTH - SEAM, BRICK_HEIGHT, 2 - SEAM]);
+                parts.push([x, UPPER_COURSE_Y, z, FRAME_WIDTH - SEAM, BRICK_HEIGHT, FRAME_WIDTH - SEAM]);
+                parts.push([x + xIn / 2, TILE_Y, z, 2 - SEAM, PLATE_HEIGHT, FRAME_WIDTH - SEAM]);
+                parts.push([x, TILE_Y, z + zIn / 2, FRAME_WIDTH - SEAM, PLATE_HEIGHT, 2 - SEAM]);
+            }
+        }
+        return parts;
+    }
+
     function panelsAndFrame(THREE, scene, box, geometry, place) {
-        // The panels under the mosaic and what is on their back, then the brick frame,
-        // simplified to one solid course per panel length.
+        // The panels under the mosaic and what is on their back, then the brick frame.
         const {rows, cols, gap, exploded} = geometry;
         const panels = [];
         const spacers = [];
@@ -105,25 +207,7 @@ window.studifyViewer = (function () {
             }
         }
 
-        const frame = [];
-        const middle = (FRAME_ABOVE - FRAME_BELOW) / 2;
-        const height = FRAME_ABOVE + FRAME_BELOW;
-        const half = FRAME_WIDTH / 2;
-        for (let col = 0; col < cols; col += PANEL_STUDS) {
-            const x = col + PANEL_STUDS / 2;
-            frame.push([x, middle, -half, PANEL_STUDS - SEAM, height, FRAME_WIDTH]);
-            frame.push([x, middle, rows + half, PANEL_STUDS - SEAM, height, FRAME_WIDTH]);
-        }
-        for (let row = 0; row < rows; row += PANEL_STUDS) {
-            const z = row + PANEL_STUDS / 2;
-            frame.push([-half, middle, z, FRAME_WIDTH, height, PANEL_STUDS - SEAM]);
-            frame.push([cols + half, middle, z, FRAME_WIDTH, height, PANEL_STUDS - SEAM]);
-        }
-        for (const x of [-half, cols + half]) {
-            for (const z of [-half, rows + half]) {
-                frame.push([x, middle, z, FRAME_WIDTH, height, FRAME_WIDTH]);
-            }
-        }
+        const frame = frameParts(rows, cols);
 
         // Two hangers on the top row, at a quarter and three quarters of the way across.
         const hangers = [0.25, 0.75].map(function (share) {
@@ -191,8 +275,8 @@ window.studifyViewer = (function () {
         return {meshes, extras: [pinGeometry]};
     }
 
-    function buildScene(THREE, data, exploded) {
-        const {rows, cols, palette, colors, heights, regions, plates, supports} = data;
+    function buildScene(THREE, data, exploded, shine) {
+        const {rows, cols, palette, colors, heights, regions, plates, supports, metallic} = data;
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xeef0f3);
         const onPanels = data.assembly === "panels";
@@ -265,14 +349,16 @@ window.studifyViewer = (function () {
 
         // Square and rectangular tiles are drawn above; round ones go wherever they aren't.
         const tilesAt = [];
+        const metalTilesAt = [];
+        const isMetal = new Set(metallic);
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
                 if (regions[stud(row, col)] < 0) {
-                    tilesAt.push(row, col);
+                    (isMetal.has(colors[stud(row, col)]) ? metalTilesAt : tilesAt).push(row, col);
                 }
             }
         }
-        const pegs = function (spots, radius, height, segments) {
+        const pegs = function (spots, radius, height, segments, finish) {
             const geometry = new THREE.CylinderGeometry(radius, radius, height, segments);
             parts.push(geometry);
             return instances(THREE, scene, geometry, spots.length / 2, false, function (i, matrix, color) {
@@ -282,15 +368,19 @@ window.studifyViewer = (function () {
                 const y = under + height / 2;
                 matrix.compose(position(col + 0.5, y, row + 0.5), noTurn, new THREE.Vector3(1, 1, 1));
                 color.set(hex(row, col));
-            });
+            }, finish);
         };
+        const segments = Math.max(rows, cols) > LARGE_MOSAIC ? 10 : 20;
         if (tilesAt.length) {
-            meshes.push(pegs(tilesAt, TILE_RADIUS, PLATE_HEIGHT, Math.max(rows, cols) > LARGE_MOSAIC ? 10 : 20));
+            meshes.push(pegs(tilesAt, TILE_RADIUS, PLATE_HEIGHT, segments));
+        }
+        if (metalTilesAt.length) {
+            meshes.push(pegs(metalTilesAt, TILE_RADIUS, PLATE_HEIGHT, segments, {...METAL, envMap: shine.texture}));
         }
         return {scene, meshes, parts};
     }
 
-    function open(THREE, stage, data) {
+    function open(THREE, stage, data, words) {
         const span = Math.max(data.rows, data.cols);
 
         const sky = new THREE.HemisphereLight(0xffffff, 0xc4c8d0, 1.5);
@@ -306,10 +396,11 @@ window.studifyViewer = (function () {
         const fill = new THREE.DirectionalLight(0xffffff, 2.2);
         fill.position.set(span * 0.4, -span, span * 0.4);
 
-        let built = buildScene(THREE, data, false);
+        const renderer = new THREE.WebGLRenderer({antialias: true});
+        const shine = reflections(THREE, renderer);
+        let built = buildScene(THREE, data, false, shine);
         built.scene.add(sky, sun, fill);
 
-        const renderer = new THREE.WebGLRenderer({antialias: true});
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.autoUpdate = false; // Nothing moves but the camera: one pass will do.
@@ -368,7 +459,7 @@ window.studifyViewer = (function () {
             if (settings.exploded !== undefined && settings.exploded !== view.exploded) {
                 view.exploded = settings.exploded;
                 freeBuilt();
-                built = buildScene(THREE, data, view.exploded);
+                built = buildScene(THREE, data, view.exploded, shine);
                 built.scene.add(sky, sun, fill);
                 renderer.shadowMap.needsUpdate = true;
             }
@@ -398,9 +489,9 @@ window.studifyViewer = (function () {
             controls.appendChild(element);
             return element;
         };
-        button("Face", () => look(front()));
-        button("Dos", () => look(back()));
-        const apart = button("Vue éclatée", function () {
+        button(words.front, () => look(front()));
+        button(words.back, () => look(back()));
+        const apart = button(words.exploded, function () {
             // Stand back to keep the parts in view as they spread.
             const distance = view.distance * (view.exploded ? 1 / EXPLODED_ZOOM : EXPLODED_ZOOM);
             look({exploded: !view.exploded, distance});
@@ -467,6 +558,7 @@ window.studifyViewer = (function () {
             dispose: function () {
                 observer.disconnect();
                 freeBuilt();
+                shine.dispose();
                 sun.shadow.dispose();
                 renderer.dispose();
                 renderer.forceContextLoss();
@@ -484,13 +576,14 @@ window.studifyViewer = (function () {
         }
     }
 
-    async function show(stageId, url) {
+    async function show(stageId, url, language) {
         hide();
         const mine = request;
+        const words = WORDS[language] || WORDS.fr;
         let stage = null;
         try {
             stage = await waitForElement(stageId);
-            setMessage(stage, "Préparation de la vue 3D…");
+            setMessage(stage, words.loading);
             const [THREE, response] = await Promise.all([import(THREE_URL), fetch(url)]);
             if (!response.ok) {
                 throw new Error(`model: ${response.status}`);
@@ -499,12 +592,12 @@ window.studifyViewer = (function () {
             if (mine !== request) {
                 return;
             }
-            current = open(THREE, stage, data);
+            current = open(THREE, stage, data, words);
             setMessage(stage, "");
         } catch (error) {
             console.error(error);
             if (stage && mine === request) {
-                setMessage(stage, "Vue 3D impossible : recharge la page, ou essaie un autre navigateur.");
+                setMessage(stage, words.failed);
             }
         }
     }

@@ -28,15 +28,17 @@ import numpy as np
 
 from studify.models.assembly import DEFAULT_ASSEMBLY
 from studify.models.bricklink import ROUND_TILE, wanted_list_xml
-from studify.models.canvas import DEFAULT_FRAME_COLOR
-from studify.models.depth import DepthError, download_progress
+from studify.models.canvas import ACCENT_COLORS, DEFAULT_FRAME_COLOR
+from studify.models.depth import MAX_PLATES, DepthError, clean_heights, download_progress
 from studify.models.pdf_creator import PdfCreator, data_uri_from_rgb_array
 from studify.models.plates import PLATE_SIZES
 from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
 from studify.models.realistic import render_mosaic
 from studify.models.relief import DEFAULT_RELIEF
+from studify.models.static import COLORS
 from studify.models.utils import fit_within, read_image
 from studify.process import build_canvas
+from studify.web.i18n import _, current_language
 
 SESSION_ROOT = Path(tempfile.gettempdir()) / "studify-web"
 # Sessions older than this are deleted whenever a new image comes in.
@@ -64,13 +66,13 @@ class ImageError(ValueError):
 
 def image_bytes_from_upload(contents: str) -> bytes:
     """Decode the ``data:<mime>;base64,<data>`` string a Dash upload produces."""
-    _, _, encoded = contents.partition(",")
+    encoded = contents.partition(",")[2]
     try:
         data = base64.b64decode(encoded, validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise ImageError("Le fichier envoyé est illisible.") from exc
+        raise ImageError(_("Le fichier envoyé est illisible.")) from exc
     if len(data) > MAX_IMAGE_BYTES:
-        raise ImageError(f"Image trop lourde (max {MAX_IMAGE_BYTES // 2**20} Mo).")
+        raise ImageError(_("Image trop lourde (max {size} Mo).").format(size=MAX_IMAGE_BYTES // 2**20))
     return data
 
 
@@ -88,9 +90,9 @@ def _check_link(url: str) -> None:
     """Refuse a link that isn't http(s), or that leads to a non-public address."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise ImageError("Le lien doit commencer par http:// ou https://.")
+        raise ImageError(_("Le lien doit commencer par http:// ou https://."))
     if not _is_public_host(parsed.hostname):
-        raise ImageError("Ce lien pointe vers une adresse inaccessible.")
+        raise ImageError(_("Ce lien pointe vers une adresse inaccessible."))
 
 
 class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
@@ -115,9 +117,9 @@ def image_bytes_from_url(url: str) -> bytes:
     except ImageError:
         raise  # A redirect that _check_link refused: its message says why.
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        raise ImageError("Impossible de télécharger l'image depuis ce lien.") from exc
+        raise ImageError(_("Impossible de télécharger l'image depuis ce lien.")) from exc
     if len(data) > MAX_IMAGE_BYTES:
-        raise ImageError(f"Image trop lourde (max {MAX_IMAGE_BYTES // 2**20} Mo).")
+        raise ImageError(_("Image trop lourde (max {size} Mo).").format(size=MAX_IMAGE_BYTES // 2**20))
     return data
 
 
@@ -145,7 +147,7 @@ def save_source(data: bytes, name: str) -> str:
     """
     img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
     if img is None:
-        raise ImageError("Ce fichier n'est pas une image reconnue (PNG, JPEG, WebP…).")
+        raise ImageError(_("Ce fichier n'est pas une image reconnue (PNG, JPEG, WebP…)."))
 
     _purge_old_sessions(time.time())
     session_id = uuid.uuid4().hex
@@ -153,7 +155,7 @@ def save_source(data: bytes, name: str) -> str:
     session.mkdir(parents=True)
     ok, png = cv2.imencode(".png", fit_within(img, MAX_SOURCE_DIMENSION))
     if not ok:
-        raise ImageError("Impossible d'enregistrer cette image.")
+        raise ImageError(_("Impossible d'enregistrer cette image."))
     # Written via Python, not cv2.imwrite, which fails on non-ASCII paths on Windows.
     (session / f"{_safe_stem(name)}.png").write_bytes(png.tobytes())
     return session_id
@@ -162,10 +164,10 @@ def save_source(data: bytes, name: str) -> str:
 def source_path(session_id: str) -> Path:
     """Return the stored source image for a session id."""
     if not isinstance(session_id, str) or not _SESSION_ID.match(session_id):
-        raise ImageError("Session invalide.")
+        raise ImageError(_("Session invalide."))
     images = sorted((SESSION_ROOT / session_id).glob("*.png"))
     if not images:
-        raise ImageError("Image introuvable : elle a peut-être expiré, recharge-la.")
+        raise ImageError(_("Image introuvable : elle a peut-être expiré, recharge-la."))
     return images[0]
 
 
@@ -234,7 +236,7 @@ def _working_image(session_id: str, crop: Crop | list[float] | None) -> Path:
     cropped = img[round(top * height) : round(bottom * height), round(left * width) : round(right * width)]
     ok, png = cv2.imencode(".png", cropped)
     if not ok:
-        raise ImageError("Impossible de rogner cette image.")
+        raise ImageError(_("Impossible de rogner cette image."))
     target = path.parent / "cropped" / path.name
     target.parent.mkdir(exist_ok=True)
     target.write_bytes(png.tobytes())
@@ -290,10 +292,9 @@ def depth_download_message() -> str:
     if progress is None:
         return ""
     done, total = progress
-    return (
-        f"Téléchargement du modèle de profondeur, une seule fois : "
-        f"{done / 10**6:.0f} / {total / 10**6:.0f} Mo. Les styles suivront."
-    )
+    return _(
+        "Téléchargement du modèle de profondeur, une seule fois : {done:.0f} / {total:.0f} Mo. Les styles suivront."
+    ).format(done=done / 10**6, total=total / 10**6)
 
 
 def render_styles(
@@ -313,6 +314,7 @@ def render_styles(
     relief: str = DEFAULT_RELIEF,
     assembly: str = DEFAULT_ASSEMBLY,
     sharp: bool = False,
+    accents: bool = False,
 ) -> list[dict[str, object]]:
     """Fit the session's image (cropped to ``crop``, if given) once per style in
     ``STYLE_LABELS`` and return, for each, its preview image, build figures and
@@ -337,9 +339,11 @@ def render_styles(
                 relief=relief,
                 assembly=assembly,
                 sharp=sharp,
+                accents=accents and round_tiles,
+                heights=_saved_edit(session_id, style),
             )
         except DepthError as exc:
-            raise ImageError(f"Relief par profondeur impossible : {exc}") from exc
+            raise ImageError(_("Relief par profondeur impossible : {reason}").format(reason=exc)) from exc
         rows, cols = canvas.shape
         distribution = canvas.get_distribution()
         layout = canvas.layout(plates, round_tiles)
@@ -349,6 +353,7 @@ def render_styles(
             colors=canvas.to_pixel_array(),
             regions=layout.regions,
             heights=layout.heights,
+            border=canvas.border_mask(),
             assembly=assembly,
             plates=np.array([[p.row, p.col, p.height, p.width] for p in layout.plates], dtype=int).reshape(-1, 4),
             supports=np.array(
@@ -396,15 +401,15 @@ def realistic_png(session_id: str, style: str) -> bytes:
     """Return the mosaic ``render_styles`` last made for a session and style, drawn
     as tiles, as PNG file bytes."""
     if style not in STYLE_LABELS:
-        raise ImageError("Style inconnu.")
+        raise ImageError(_("Style inconnu."))
     mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
     if not mosaic.is_file():
-        raise ImageError("Cette mosaïque n'a pas encore été générée.")
+        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
     with np.load(mosaic) as saved:
         pixels = render_mosaic(saved["colors"], saved["regions"], saved["heights"])
     ok, png = cv2.imencode(".png", cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR))
     if not ok:
-        raise ImageError("Impossible de dessiner cette mosaïque.")
+        raise ImageError(_("Impossible de dessiner cette mosaïque."))
     return png.tobytes()
 
 
@@ -412,24 +417,88 @@ def model_data(session_id: str, style: str) -> dict[str, object]:
     """Return the pieces of the mosaic ``render_styles`` last made for a session and
     style, for the 3D view. Grids are flat, row by row, to keep this small."""
     if style not in STYLE_LABELS:
-        raise ImageError("Style inconnu.")
+        raise ImageError(_("Style inconnu."))
     mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
     if not mosaic.is_file():
-        raise ImageError("Cette mosaïque n'a pas encore été générée.")
+        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
     with np.load(mosaic) as saved:
         rows, cols = saved["regions"].shape
         palette, colors = np.unique(saved["colors"].reshape(-1, 3), axis=0, return_inverse=True)
+        metallic = {tuple(COLORS[name]) for name in ACCENT_COLORS}
         return {
             "rows": rows,
             "cols": cols,
             "assembly": str(saved["assembly"]),
             "palette": [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in palette.tolist()],
+            "metallic": [i for i, color in enumerate(palette.tolist()) if tuple(color) in metallic],
             "colors": colors.ravel().tolist(),
             "heights": saved["heights"].ravel().tolist(),
             "regions": saved["regions"].ravel().tolist(),
             "plates": saved["plates"].ravel().tolist(),
             "supports": saved["supports"].ravel().tolist(),
         }
+
+
+def relief_data(session_id: str, style: str) -> dict[str, object]:
+    """Return what the relief editor shows for a rendered mosaic."""
+    if style not in STYLE_LABELS:
+        raise ImageError(_("Style inconnu."))
+    mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
+    if not mosaic.is_file():
+        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
+    with np.load(mosaic) as saved:
+        rows, cols = saved["heights"].shape
+        palette, colors = np.unique(saved["colors"].reshape(-1, 3), axis=0, return_inverse=True)
+        return {
+            "rows": rows,
+            "cols": cols,
+            "max_height": MAX_PLATES,
+            "palette": [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in palette.tolist()],
+            "colors": colors.ravel().tolist(),
+            "heights": saved["heights"].ravel().tolist(),
+            "border": saved["border"].ravel().astype(int).tolist(),
+        }
+
+
+def _edit_path(session_id: str, style: str) -> Path:
+    return path_in_session(session_id, f"relief-{style}.npy")
+
+
+def _saved_edit(session_id: str, style: str) -> np.ndarray | None:
+    """Return the relief painted for a style, if any."""
+    path = _edit_path(session_id, style)
+    return np.load(path) if path.is_file() else None
+
+
+def save_relief_edit(session_id: str, style: str, heights: object) -> None:
+    """
+    Keep a painted relief for a style, for its next render and guide. Heights are
+    limited to what a relief can stand on, the border stays flat, and what is too
+    thin to stand up is removed.
+
+    :param heights: The plates under each stud, flat, row by row, as the editor sends it.
+    :raises ImageError: if it doesn't fit the mosaic.
+    """
+    if style not in STYLE_LABELS:
+        raise ImageError(_("Style inconnu."))
+    mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
+    if not mosaic.is_file():
+        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
+    with np.load(mosaic) as saved:
+        shape, border = saved["heights"].shape, saved["border"]
+    try:
+        grid = np.asarray(heights, dtype=int).reshape(shape)
+    except (TypeError, ValueError) as exc:
+        raise ImageError(_("Ce relief ne correspond pas à la mosaïque.")) from exc
+    grid = np.clip(grid, 0, MAX_PLATES)
+    grid[border] = 0
+    np.save(_edit_path(session_id, style), clean_heights(grid))
+
+
+def clear_relief_edits(session_id: str) -> None:
+    """Forget every relief painted for a session: a new render starts afresh."""
+    for style in STYLE_LABELS:
+        _edit_path(session_id, style).unlink(missing_ok=True)
 
 
 def build_pdf(
@@ -450,10 +519,11 @@ def build_pdf(
     relief: str = DEFAULT_RELIEF,
     assembly: str = DEFAULT_ASSEMBLY,
     sharp: bool = False,
+    accents: bool = False,
 ) -> Path:
     """Write the build guide for one style as a PDF and return its path."""
     if style not in STYLE_LABELS:
-        raise ImageError("Style inconnu.")
+        raise ImageError(_("Style inconnu."))
     path = _working_image(session_id, crop)
     canvas = build_canvas(
         size,
@@ -468,6 +538,8 @@ def build_pdf(
         relief=relief,
         assembly=assembly,
         sharp=sharp,
+        accents=accents and round_tiles,
+        heights=_saved_edit(session_id, style),
     )
     creator = PdfCreator(
         canvas,
@@ -475,7 +547,7 @@ def build_pdf(
         currency=currency,
         tinted=tinted,
         plates=plates,
-        lang="fr",
+        lang=current_language(),
         round_tiles=round_tiles,
     )
     return creator.generate_pdf(output_dir=source_path(session_id).parent / f"guide-{style}")
@@ -484,9 +556,9 @@ def build_pdf(
 def built_pdf(session_id: str, style: str) -> Path:
     """Return the PDF ``build_pdf`` last wrote for a session and style."""
     if style not in STYLE_LABELS:
-        raise ImageError("Style inconnu.")
+        raise ImageError(_("Style inconnu."))
     path = source_path(session_id)
     pdf = path.parent / f"guide-{style}" / f"{path.stem}.pdf"
     if not pdf.is_file():
-        raise ImageError("Ce guide n'a pas encore été généré.")
+        raise ImageError(_("Ce guide n'a pas encore été généré."))
     return pdf

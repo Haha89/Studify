@@ -103,6 +103,12 @@ def main(argv: list[str] | None = None) -> int:
         "and its border from plates up to 1x4. Overrides --plates.",
     )
     parser.add_argument(
+        "--accents",
+        action="store_true",
+        help="With --round-tiles, turn a few golden and silvery spots to gold and silver. "
+        "Large areas only if they very likely are metal. Ignored with --max-colors.",
+    )
+    parser.add_argument(
         "--relief",
         choices=["flat", "stepped", "depth"],
         default="flat",
@@ -166,6 +172,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("the following arguments are required: image (or pass --gui)")
     if args.round_tiles and args.relief != "flat":
         parser.error("--relief is built on stacks of plates, so can't be used with --round-tiles")
+    if args.accents and not args.round_tiles:
+        parser.error("--accents needs --round-tiles")
     if args.size < 1:
         parser.error("--size must be at least 1")
     if not 0 <= args.frame < DIM_BASE // 2:
@@ -208,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
             relief=args.relief,
             assembly=args.assembly,
             sharp=args.sharp_edges,
+            accents=args.accents,
             lang=args.lang,
             clean_strays=not args.keep_strays,
         )

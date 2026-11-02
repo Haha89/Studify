@@ -125,6 +125,63 @@ body {
     color: #fff;
 }
 
+.relief-stage {
+    height: calc(100vh - 90px);
+}
+
+.relief-editor {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.relief-tools {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.relief-tools button {
+    background: #fff;
+    border: 1px solid #d5d8de;
+    border-radius: 999px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.8rem;
+}
+
+.relief-tools button[aria-pressed="true"],
+.relief-tools button.primary {
+    background: #c8102e;
+    border-color: #c8102e;
+    color: #fff;
+}
+
+.relief-tools button:disabled {
+    opacity: 0.5;
+}
+
+.relief-tools label {
+    font-size: 0.8rem;
+}
+
+.relief-hint {
+    color: #6b7280;
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+.relief-canvas {
+    cursor: crosshair;
+    image-rendering: pixelated;
+    max-width: 100%;
+    touch-action: none;
+}
+
 .viewer-message {
     color: #6b7280;
     left: 50%;
