@@ -185,6 +185,8 @@ def _layout() -> dmc.MantineProvider:
                             [
                                 dmc.SegmentedControl(
                                     id="crop-ratio",
+                                    persistence=True,
+                                    persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in CROP_RATIOS],
                                     value="free",
                                     radius="xl",
@@ -222,6 +224,8 @@ def _layout() -> dmc.MantineProvider:
                         dmc.Text(id="size-label", fw=600, size="sm"),
                         dmc.Slider(
                             id="size",
+                            persistence=True,
+                            persistence_type="session",
                             min=SIZES[0],
                             max=SIZES[-1],
                             step=1,
@@ -238,6 +242,8 @@ def _layout() -> dmc.MantineProvider:
                         dmc.Text(_("Cadre autour de l'image"), fw=600, size="sm"),
                         dmc.Slider(
                             id="frame",
+                            persistence=True,
+                            persistence_type="session",
                             min=FRAMES[0],
                             max=FRAMES[-1],
                             step=1,
@@ -251,6 +257,8 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.SegmentedControl(
                             id="frame-color",
+                            persistence=True,
+                            persistence_type="session",
                             data=[{"label": _(label), "value": value} for label, value in FRAME_COLOR_CHOICES],
                             value="black",
                             radius="xl",
@@ -269,6 +277,8 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.SegmentedControl(
                             id="max-colors",
+                            persistence=True,
+                            persistence_type="session",
                             data=[{"label": _(label), "value": value} for label, value in COLOR_LIMITS],
                             value="0",
                             radius="xl",
@@ -291,6 +301,8 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.SegmentedControl(
                             id="palette",
+                            persistence=True,
+                            persistence_type="session",
                             data=[{"label": _(label), "value": value} for label, value in PALETTE_CHOICES],
                             value="buyable",
                             radius="xl",
@@ -303,6 +315,8 @@ def _layout() -> dmc.MantineProvider:
                     [
                         dmc.Switch(
                             id="dither",
+                            persistence=True,
+                            persistence_type="session",
                             label=_("Tramage"),
                             description=_(
                                 "Mélange les couleurs pour simuler celles qui manquent. Plus lent à calculer."
@@ -310,6 +324,8 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Switch(
                             id="accents",
+                            persistence=True,
+                            persistence_type="session",
                             label=_("Accents or et argent"),
                             description=_(
                                 "En mode Tuiles rondes seulement : quelques touches d'or et d'argent sur les petites zones dorées ou grises. Une grande zone ne change que si c'est très probablement du métal. Sans effet avec une limite de couleurs ou dans les autres modes."
@@ -317,6 +333,8 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Switch(
                             id="sharp",
+                            persistence=True,
+                            persistence_type="session",
                             label=_("Contours nets"),
                             description=_(
                                 "Pour les logos et les aplats : chaque tenon prend la couleur qui le couvre le "
@@ -333,6 +351,8 @@ def _layout() -> dmc.MantineProvider:
                                 mt="xs",
                             ),
                             id="plates",
+                            persistence=True,
+                            persistence_type="session",
                             label=_("Tailles de tuiles"),
                             description=_(
                                 "Moins de pièces à poser avec les grandes tuiles, dans le guide et la liste "
@@ -362,6 +382,8 @@ def _layout() -> dmc.MantineProvider:
                                 ),
                                 dmc.SegmentedControl(
                                     id="mode",
+                                    persistence=True,
+                                    persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in MODE_CHOICES],
                                     value="flat",
                                     radius="xl",
@@ -385,6 +407,8 @@ def _layout() -> dmc.MantineProvider:
                                 ),
                                 dmc.SegmentedControl(
                                     id="assembly",
+                                    persistence=True,
+                                    persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in ASSEMBLY_CHOICES],
                                     value="baseplates",
                                     radius="xl",
@@ -395,6 +419,8 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Switch(
                             id="improved-visibility",
+                            persistence=True,
+                            persistence_type="session",
                             label=_("Visibilité améliorée"),
                             description=_(
                                 "Dans le guide : des cartes plus grandes, avec des numéros plus gros et des lignes plus "
@@ -403,6 +429,8 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Switch(
                             id="tinted",
+                            persistence=True,
+                            persistence_type="session",
                             label=_("Cartes en couleur"),
                             description=_("Teinte chaque tenon dans le guide. Désactive-le pour économiser l'encre."),
                             checked=True,
@@ -422,6 +450,8 @@ def _layout() -> dmc.MantineProvider:
                                 ),
                                 dmc.SegmentedControl(
                                     id="baseplates",
+                                    persistence=True,
+                                    persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in BASEPLATE_CHOICES],
                                     value="official",
                                     radius="xl",
@@ -435,6 +465,8 @@ def _layout() -> dmc.MantineProvider:
                                 dmc.Text(_("Pour l'estimation du prix."), c="dimmed", size="xs"),
                                 dmc.SegmentedControl(
                                     id="currency",
+                                    persistence=True,
+                                    persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in CURRENCY_CHOICES],
                                     value="EUR",
                                     radius="xl",
@@ -512,8 +544,12 @@ def _layout() -> dmc.MantineProvider:
                 settings,
                 styles,
                 download,
-                dcc.Store(id="source"),  # {"session": id, "name": ..., "width"/"height": preview size}
-                dcc.Store(id="crop"),  # [left, top, right, bottom] as fractions, or None
+                # Kept for the browser tab's session, like the settings: changing language reloads the page.
+                dcc.Store(
+                    id="source", storage_type="session"
+                ),  # {"session": id, "name": ..., "width"/"height": preview size}
+                dcc.Store(id="crop", storage_type="session"),  # [left, top, right, bottom] as fractions, or None
+                dcc.Store(id="rendered", storage_type="session"),  # What the current mosaics were made from.
                 dcc.Store(id="settings"),  # The settings the current previews were made with.
                 dcc.Store(id="builds"),  # {style: {"distribution", "baseplates"}}, to reprice without refitting.
                 dcc.Store(id="selected-style"),
@@ -896,6 +932,7 @@ def create_app() -> Dash:
         Output("previews", "data"),
         Output("relief-status", "children", allow_duplicate=True),
         Output("relief-restore-area", "style"),
+        Output("rendered", "data"),
         Input("generate", "n_clicks"),
         Input("source", "data"),
         Input("crop", "data"),
@@ -914,6 +951,7 @@ def create_app() -> Dash:
         State("sharp", "checked"),
         State("accents", "checked"),
         State("improved-visibility", "checked"),
+        State("rendered", "data"),
         running=[(Output("generate", "loading"), True, False), (Output("depth-poll", "disabled"), False, True)],
         prevent_initial_call=True,
     )
@@ -936,9 +974,10 @@ def create_app() -> Dash:
         sharp,
         accents,
         improved_visibility,
+        rendered,
     ):
         if not source:
-            return (no_update,) * 7
+            return (no_update,) * 8
         settings = {
             "size": size,
             "frame": frame,
@@ -959,10 +998,12 @@ def create_app() -> Dash:
             "improved_visibility": bool(improved_visibility),
         }
         try:
-            had_edits = service.clear_relief_edits(source["session"])
+            # The same mosaic again, as after a reload, keeps any relief painted on it.
+            mosaic = service.mosaic_key(source["session"], settings)
+            had_edits = mosaic != rendered and service.clear_relief_edits(source["session"])
             results = service.render_styles(source["session"], **settings)
         except service.ImageError as exc:
-            return _error(str(exc)), None, None, None, None, "", HIDDEN
+            return _error(str(exc)), None, None, None, None, "", HIDDEN, None
         # Nothing to restore a relief onto if the new render is flat.
         lost = had_edits and settings["relief"] != "flat"
         status = (
@@ -970,7 +1011,31 @@ def create_app() -> Dash:
             if lost
             else ""
         )
-        return _cards(results), settings, None, _builds(results), _previews(results), status, {} if lost else HIDDEN
+        restore = {} if lost else HIDDEN
+        return _cards(results), settings, None, _builds(results), _previews(results), status, restore, mosaic
+
+    @app.callback(
+        Output("crop-graph", "figure", allow_duplicate=True),
+        Output("crop-area", "style", allow_duplicate=True),
+        Input("source", "data"),
+        State("crop", "data"),
+        State("crop-graph", "figure"),
+        prevent_initial_call=True,
+    )
+    def restore_crop_area(source, crop, figure):
+        # After a reload, the picture is known but its crop area hasn't been drawn.
+        if not source or (figure and figure.get("data")):
+            raise PreventUpdate
+        try:
+            image_uri, width, height = service.preview(service.source_path(source["session"]))
+        except service.ImageError:
+            raise PreventUpdate from None  # Expired: rendering the styles says so.
+        restored = _crop_figure(image_uri, width, height)
+        if crop:
+            left, top, right, bottom = crop
+            box = (left * width - 0.5, top * height - 0.5, right * width - 0.5, bottom * height - 0.5)
+            restored.update_layout(shapes=[_crop_shape(box)])
+        return restored, {}
 
     @app.callback(
         Output("relief-modal", "opened"),
@@ -1064,6 +1129,13 @@ def create_app() -> Dash:
         preview = previews[ctx.triggered_id["index"]]
         image_class = "preview-image smooth" if preview["smooth"] else "preview-image"
         return True, _(preview["label"]), preview["image"], image_class
+
+    @app.server.route("/preview/<session_id>/<style>.png")
+    def serve_preview(session_id, style):
+        try:
+            return send_file(service.preview_path(session_id, style), mimetype="image/png")
+        except service.ImageError:
+            abort(404)
 
     @app.server.route("/realistic/<session_id>/<style>.png")
     def serve_realistic(session_id, style):

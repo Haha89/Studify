@@ -200,7 +200,7 @@ def test_render_styles_returns_one_preview_per_style(png_bytes):
 
     assert [r["style"] for r in results] == list(service.STYLE_LABELS)
     for result in results:
-        assert result["image"].startswith("data:image/png;base64,")
+        assert result["image"].startswith(f"/preview/{session}/{result['style']}.png?v=")
         assert result["studs"] == "32 × 32"
         assert result["baseplates"] == 1
         assert result["bricks"] == 32 * 32
@@ -460,6 +460,23 @@ def test_improved_visibility_reaches_only_the_guide(png_bytes, monkeypatch, impr
         session, size=1, frame=0, max_colors=None, style="natural", improved_visibility=improved
     ).read_text(encoding="utf-8")
     assert ('<body class="improved-visibility">' in html) is improved
+
+
+def test_previews_are_served_as_files_keeping_responses_small(png_bytes):
+    from studify.web.app import create_app
+
+    session = service.save_source(png_bytes, "flag.png")
+    client = create_app().server.test_client()
+    assert client.get(f"/preview/{session}/pop.png").status_code == 404  # never rendered
+
+    result = service.render_styles(session, size=1, frame=2, max_colors=None, relief="stepped")[1]
+    assert len(result["image"]) < 200
+    with client.get(result["image"]) as response:
+        assert response.status_code == 200 and response.mimetype == "image/png"
+        assert cv2.imdecode(np.frombuffer(response.data, dtype=np.uint8), cv2.IMREAD_COLOR) is not None
+
+    assert client.get(f"/preview/{'0' * 32}/pop.png").status_code == 404  # unknown session
+    assert client.get(f"/preview/{session}/baroque.png").status_code == 404
 
 
 def test_the_guide_follows_the_language(png_bytes, monkeypatch):
