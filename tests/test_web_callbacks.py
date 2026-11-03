@@ -14,7 +14,8 @@ import pytest
 pytest.importorskip("dash")
 
 from studify.models import depth, pdf_creator  # noqa: E402
-from studify.web import service  # noqa: E402
+from studify.web import app as app_module  # noqa: E402
+from studify.web import projects, service  # noqa: E402
 from studify.web.app import create_app  # noqa: E402
 
 STYLES = list(service.STYLE_LABELS)
@@ -107,6 +108,7 @@ def generate(
     accents=False,
     improved_visibility=False,
     rendered=None,
+    selected=None,
 ):
     return fire(
         "generate_styles",
@@ -130,6 +132,7 @@ def generate(
             accents,
             improved_visibility,
             rendered,
+            selected,
         ],
         "generate.n_clicks",
     )
@@ -612,3 +615,159 @@ class TestDownloadPdf:
 
     def test_without_a_selected_style_updates_nothing(self, fire, source):
         assert fire("download_pdf", [1, source, {"size": 1}, None], "download-pdf.n_clicks") is None
+
+
+class TestKeptAcrossReloads:
+    def test_the_same_mosaic_keeps_its_chosen_style(self, fire, source):
+        rendered = generate(fire, source)["rendered"]["data"]
+        again = generate(fire, source, rendered=rendered, selected="pop")
+        assert again["selected-style"]["data"] == "pop"
+
+    def test_another_mosaic_starts_without_one(self, fire, source):
+        rendered = generate(fire, source)["rendered"]["data"]
+        assert generate(fire, source, frame=1, rendered=rendered, selected="pop")["selected-style"]["data"] is None
+
+    def test_the_choice_is_kept_for_the_session(self, app):
+        assert re.search(r"id='selected-style'[^)]*storage_type='session'", str(app.layout()))
+
+
+def test_a_restored_relief_that_no_longer_fits_is_reported(fire, source):
+    settings = generate(fire, source, relief="stepped")["settings"]["data"]
+    service.save_relief_edit(source["session"], "comic", [0] * (32 * 32))
+    service.clear_relief_edits(source["session"])
+
+    out = fire("apply_relief_edit", [None, 1, source, {**settings, "size": 2}], "relief-restore.n_clicks")
+    assert "ne va plus sur BD" in str(out["relief-status"]["children"])
+
+
+class TestServer:
+    def test_serves_with_waitress(self, monkeypatch):
+        import waitress
+
+        from studify.web import app as web_app
+
+        served = {}
+        monkeypatch.setattr(waitress, "serve", lambda app, **options: served.update(options))
+        assert web_app.main(["--port", "9000", "--threads", "3"]) == 0
+        assert served == {"host": "127.0.0.1", "port": 9000, "threads": 3}
+
+
+class TestProjects:
+    """Saving a project, opening its link, and the list of projects saved in this browser."""
+
+    @pytest.fixture(autouse=True)
+    def data_root(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(projects.DATA_ENV, str(tmp_path / "data"))
+
+    @pytest.fixture
+    def saved(self, fire, source):
+        built = generate(fire, source, relief="stepped", frame=1, max_colors="8", dither=True)
+        service.save_relief_edit(source["session"], "pop", [0] * (32 * 32))
+        settings = built["settings"]["data"]
+        out = fire("save_project", [1, source, settings, "pop", None], "save-project.n_clicks")
+        return out, settings
+
+    def test_saving_gives_a_link_and_lists_the_project(self, saved):
+        out, _ = saved
+        listed = out["my-projects"]["data"]
+        assert len(listed) == 1 and listed[0]["name"] == "flag.png" and listed[0]["token"]
+        assert f"/p/{listed[0]['id']}" in str(out["share-area"]["children"])
+
+    def test_the_newest_comes_first_and_the_list_is_capped(self, fire, source, saved, monkeypatch):
+        out, settings = saved
+        monkeypatch.setattr(app_module, "MAX_LISTED_PROJECTS", 1)
+        again = fire("save_project", [1, source, settings, None, out["my-projects"]["data"]], "save-project.n_clicks")
+        listed = again["my-projects"]["data"]
+        assert len(listed) == 1 and listed[0]["id"] != out["my-projects"]["data"][0]["id"]
+
+    def test_nothing_to_save_before_a_render(self, fire, source):
+        assert fire("enable_saving", [None], "settings.data")["save-project"]["disabled"] is True
+        assert fire("save_project", [1, source, None, None, None], "save-project.n_clicks") is None
+
+    def test_opening_puts_the_project_in_a_new_session(self, app, saved):
+        out, settings = saved
+        project_id = out["my-projects"]["data"][0]["id"]
+        response = app.server.test_client().get(f"/p/{project_id}")
+        assert response.status_code == 200 and response.headers["X-Robots-Tag"] == "noindex"
+        page = response.get_data(as_text=True)
+        stores = json.loads(re.search(r"const stores = (.*);", page).group(1))
+        assert f'location.replace("/?project={project_id}")' in page and "_dash_persistence." in page
+
+        session = stores["source"]["session"]
+        assert stores["selected-style"] == "pop"
+        assert service.relief_edit_path(session, "pop").is_file()
+        # Rendering it again in that session is the same mosaic: the relief and the choice stay.
+        assert stores["rendered"] == service.mosaic_key(session, settings)
+
+    def test_the_page_starts_from_the_projects_settings(self, app, saved):
+        out, _ = saved
+        project_id = out["my-projects"]["data"][0]["id"]
+        with app.server.test_request_context(f"/?project={project_id}"):
+            layout = str(app.layout())
+        assert "id='mode'" in layout and "value='relief'" in layout and "value='8'" in layout
+        assert f"/lang/en?project={project_id}" in layout
+        with app.server.test_request_context("/"):
+            assert "value='relief'" not in str(app.layout())
+        # The page fetches its layout from /_dash-layout, without its query: it is read from where it came from.
+        with app.server.test_request_context(
+            "/_dash-layout", headers={"Referer": f"http://localhost/?project={project_id}"}
+        ):
+            assert "value='relief'" in str(app.layout())
+        with app.server.test_request_context(
+            "/_dash-layout", headers={"Referer": f"http://elsewhere.example/?project={project_id}"}
+        ):
+            assert "value='relief'" not in str(app.layout())
+
+    def test_an_unknown_link_says_so(self, app):
+        response = app.server.test_client().get("/p/" + "a" * 22)
+        assert response.status_code == 302 and response.headers["Location"].endswith("/?missing=1")
+        with app.server.test_request_context("/?missing=1"):
+            assert "introuvable" in str(app.layout())
+
+    def test_the_language_switch_comes_back_to_the_project(self, app):
+        client = app.server.test_client()
+        assert client.get("/lang/en?project=" + "a" * 22).headers["Location"].endswith("/?project=" + "a" * 22)
+        assert client.get("/lang/en?project=../x").headers["Location"].endswith("/")
+
+    def test_the_list_drops_projects_that_are_gone(self, fire, saved):
+        listed = saved[0]["my-projects"]["data"]
+        gone = {**listed[0], "id": "b" * 22}
+        out = fire("list_projects", [[*listed, gone, {"id": "<script>"}, "junk"]], "my-projects.data")
+        assert [entry["id"] for entry in out["my-projects"]["data"]] == [listed[0]["id"]]
+        assert listed[0]["name"] in str(out["my-projects-list"]["children"])
+
+    def test_deleting_removes_the_project_and_its_entry(self, app, saved):
+        listed = saved[0]["my-projects"]["data"]
+        project_id = listed[0]["id"]
+        key = next(key for key, spec in app.callback_map.items() if spec.get("callback").__name__ == "delete_project")
+        button = {"index": project_id, "type": "project-delete"}
+        response = app.server.test_client().post(
+            "/_dash-update-component",
+            json={
+                "output": key,
+                "outputs": {"id": "my-projects", "property": key.rsplit(".", 1)[1]},
+                "inputs": [[{"id": button, "property": "n_clicks", "value": 1}]],
+                "state": [{"id": "my-projects", "property": "data", "value": listed}],
+                "changedPropIds": [json.dumps(button, separators=(",", ":"), sort_keys=True) + ".n_clicks"],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.get_json()["response"]["my-projects"]["data"] == []
+        assert projects.kept([project_id]) == set()
+
+
+class TestControls:
+    def test_settings_and_controls_go_both_ways(self):
+        controls = {**app_module.DEFAULT_CONTROLS, "mode": "depth", "max-colors": "12", "sharp": True}
+        settings = app_module.settings_from_controls(controls, [0.1, 0.1, 0.9, 0.9])
+        assert app_module.controls_from_settings(settings) == controls
+
+    @pytest.mark.parametrize(
+        "settings",
+        [None, [], {"size": 99}, {"size": True}, {"frame_color": "pink"}, {"plates": "1x2"}, {"relief": "x"}],
+    )
+    def test_anything_unknown_stays_at_its_default(self, settings):
+        assert app_module.controls_from_settings(settings) == app_module.DEFAULT_CONTROLS
+
+    def test_the_1x1_plate_is_always_kept(self):
+        assert app_module.controls_from_settings({"plates": ["2x2", "9x9"]})["plates"] == ["1x1", "2x2"]

@@ -111,15 +111,23 @@ stylesheet puts one baseplate on each page — or call `PdfCreator.generate_pdf`
 ```bash
 uv sync --extra web
 uv run studify-web        # then open http://127.0.0.1:8050
+uv run studify-web --host 0.0.0.0 --threads 8   # reachable from other machines
+uv run studify-web --debug                                # Flask's server, with hot reload
 ```
 
 Upload a photo (or paste a link), crop it if you like, pick the size, frame, colour
 limit, baseplates and currency, the plate sizes, and optionally dithering or uncoloured
 stud maps, compare the natural, pop and comic renders side by side with their prices, and
 download the chosen one as a PDF guide or a BrickLink wanted list. The app and its guides
-are in French. Uploads are stored at 2000 pixels at most on the longest side.
+are in French or English. Uploads are stored at 2000 pixels at most on the longest side.
 PDFs are printed by a headless Chrome, Chromium or Edge; set `STUDIFY_BROWSER` to point at
 one if it isn't found automatically.
+
+It runs on [Waitress](https://docs.pylonsproject.org/projects/waitress/), a production
+server, unless `--debug`. Pictures over 15 MB or 50 million pixels are refused before being
+decoded, links are only downloaded from public addresses (checked again as the connection is
+made, so DNS can't switch it to the server's own network), and at most 2 PDFs or depth reliefs
+are made at once per process: others wait up to 30 seconds, then are asked to try again.
 
 <img src="docs/images/web-app.png" width="700" alt="The web app comparing natural, pop-art and comic renders of a mountain lake, with prices and download buttons">
 
@@ -181,6 +189,13 @@ with `--plates`; 1x1 always stays, as it is the only plate that fits a lone stud
 the top of the page. With a relief, "Edit the relief" lets you paint how high each stud stands:
 the price, the BrickLink list, the 3D view and the guide all follow. A new render starts afresh, with a button to
 bring the painted relief back.
+
+"Save and share" keeps a project, which is the picture, the settings, the chosen style and the painted
+relief, under a link such as `/p/<id>`. Opening the link copies the project into a new session, so
+changes made afterwards never alter it: save again for a new link. Anyone with a link can see the
+picture. Projects saved in a browser are listed in step 1, which can also delete them. They are
+kept 90 days after they were last opened, in `~/.local/share/studify/projects` (or under
+`STUDIFY_DATA`), up to 2 GB in all.
 
 ## Pieces
 
@@ -249,7 +264,8 @@ Ideas not yet started are logged in [`ROADMAP.md`](ROADMAP.md).
 ## Develop
 
 ```bash
-uv run pytest                       # tests
+uv run pytest                       # tests, one worker per CPU (pytest-xdist)
+uv run pytest -n0 tests/test_web.py # one process, to debug
 uv run pytest --cov=studify         # tests with coverage
 uv run ruff check .                 # lint
 uv run ruff format .                # format

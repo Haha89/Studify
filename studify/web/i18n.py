@@ -168,6 +168,10 @@ ENGLISH = {
         "The relief has changed, and the price, list and guide follow. Click a style to choose it."
     ),
     "Cette génération a retiré le relief que tu avais peint.": "This render removed the relief you had painted.",
+    "Le relief peint ne va plus sur {styles} : la mosaïque a changé de taille. Remets les réglages d'avant, génère, puis récupère-le.": (
+        "The painted relief no longer fits {styles}: the mosaic changed size. Go back to the earlier "
+        "settings, render, then bring it back."
+    ),
     "Récupérer le relief peint": "Bring back the painted relief",
     " Générer à nouveau le retirera, mais tu pourras le récupérer.": (
         " Generating again will remove it, but you'll be able to bring it back."
@@ -213,6 +217,27 @@ ENGLISH = {
     "Impossible de dessiner cette mosaïque.": "Couldn't draw this mosaic.",
     "Ce guide n'a pas encore été généré.": "This guide hasn't been generated yet.",
     "Ce relief ne correspond pas à la mosaïque.": "This relief doesn't match the mosaic.",
+    "Le serveur est très demandé : réessaie dans un instant.": "The server is very busy: try again in a moment.",
+    # Projects.
+    "Enregistrer et partager": "Save and share",
+    "Copier le lien": "Copy the link",
+    "Ce lien rouvre la photo, les réglages, le style choisi et le relief peint. Toute personne qui a le lien peut voir ta photo. Ce que tu changes ensuite ne modifie pas le lien : enregistre à nouveau pour en avoir un nouveau.": (
+        "This link opens the picture, the settings, the chosen style and the painted relief again. Anyone with "
+        "the link can see your picture. What you change afterwards doesn't change the link: save again for a new one."
+    ),
+    "Tes projets": "Your projects",
+    "Enregistrés dans ce navigateur. Chacun reste disponible 90 jours après sa dernière ouverture.": (
+        "Saved in this browser. Each stays available for 90 days after it was last opened."
+    ),
+    "Ouvrir": "Open",
+    "Supprimer": "Delete",
+    "Lien de projet invalide.": "Invalid project link.",
+    "Projet introuvable : il a peut-être expiré ou été supprimé.": "Project not found: it may have expired or been deleted.",
+    "Impossible d'enregistrer ce projet.": "Couldn't save this project.",
+    "Plus de place pour enregistrer des projets : réessaie plus tard.": "No room left to save projects: try again later.",
+    "Image trop grande : {pixels} millions de pixels, {max} millions au plus.": (
+        "Picture too large: {pixels} million pixels, {max} million at most."
+    ),
 }
 
 
