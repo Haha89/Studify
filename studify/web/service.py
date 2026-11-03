@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
+import http.client
 import ipaddress
 import re
 import shutil
 import socket
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -44,10 +47,18 @@ SESSION_ROOT = Path(tempfile.gettempdir()) / "studify-web"
 # Sessions older than this are deleted whenever a new image comes in.
 SESSION_TTL_SECONDS = 24 * 3600
 MAX_IMAGE_BYTES = 15 * 1024 * 1024
+# Pixels a picture may have, checked before decoding it: a small, well compressed file
+# can still decode into gigabytes. 50 million is a large phone photo's full resolution.
+MAX_IMAGE_PIXELS = 50_000_000
 # Longest side a source is stored at. The largest mosaic is under 200 studs wide,
 # so this leaves room for a tight crop while keeping every later step quick.
 MAX_SOURCE_DIMENSION = 2000
 URL_TIMEOUT_SECONDS = 10
+# Heavy work run at once, beyond which a request waits, then is turned away: each
+# PDF starts a full browser, and each depth relief runs a neural network.
+MAX_CONCURRENT_HEAVY = 2
+# How long a request waits for its turn before being turned away.
+HEAVY_WAIT_SECONDS = 30
 
 # Styles offered side by side, in display order, with their French labels.
 STYLE_LABELS = {"natural": "Naturel", "pop": "Pop art", "comic": "BD"}
@@ -64,6 +75,79 @@ class ImageError(ValueError):
     """The image couldn't be fetched or read. The message is shown to the user."""
 
 
+_heavy_slots = threading.BoundedSemaphore(MAX_CONCURRENT_HEAVY)
+_heavy_held = threading.local()
+
+
+class _HeavyWork:
+    """Hold one of the ``MAX_CONCURRENT_HEAVY`` slots for PDFs and depth reliefs, so a
+    few visitors can't each start a browser or a model and exhaust the server. A slot
+    this thread already holds is reused. The limit is per process."""
+
+    def __enter__(self) -> None:
+        depth = getattr(_heavy_held, "depth", 0)
+        if depth == 0 and not _heavy_slots.acquire(timeout=HEAVY_WAIT_SECONDS):
+            raise ImageError(_("Le serveur est très demandé : réessaie dans un instant."))
+        _heavy_held.depth = depth + 1
+
+    def __exit__(self, *exc_info) -> None:
+        _heavy_held.depth -= 1
+        if _heavy_held.depth == 0:
+            _heavy_slots.release()
+
+
+def image_size(data: bytes) -> tuple[int, int] | None:
+    """Return a PNG, JPEG, WebP, GIF or BMP file's (width, height), read from its
+    header without decoding it, or None if it isn't one of these."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and data[12:16] == b"IHDR" and len(data) >= 24:
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    if data[:6] in (b"GIF87a", b"GIF89a") and len(data) >= 10:
+        return int.from_bytes(data[6:8], "little"), int.from_bytes(data[8:10], "little")
+    if data.startswith(b"BM") and len(data) >= 26:
+        width = int.from_bytes(data[18:22], "little", signed=True)
+        height = int.from_bytes(data[22:26], "little", signed=True)
+        return abs(width), abs(height)
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        chunk = data[12:16]
+        if chunk == b"VP8 " and len(data) >= 30:
+            return int.from_bytes(data[26:28], "little") & 0x3FFF, int.from_bytes(data[28:30], "little") & 0x3FFF
+        if chunk == b"VP8L" and len(data) >= 25:
+            bits = int.from_bytes(data[21:25], "little")
+            return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+        if chunk == b"VP8X" and len(data) >= 30:
+            return int.from_bytes(data[24:27], "little") + 1, int.from_bytes(data[27:30], "little") + 1
+        return None
+    if data.startswith(b"\xff\xd8"):
+        return _jpeg_size(data)
+    return None
+
+
+# JPEG markers that start a frame and give its size: SOF0 to SOF15, but DHT, JPG and DAC.
+_JPEG_FRAMES = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+
+
+def _jpeg_size(data: bytes) -> tuple[int, int] | None:
+    """Walk a JPEG's segments up to its frame header, which holds its size."""
+    i = 2
+    while i + 4 <= len(data):
+        if data[i] != 0xFF:
+            return None
+        marker = data[i + 1]
+        if marker == 0xFF:  # Padding before a marker.
+            i += 1
+        elif marker == 0x01 or 0xD0 <= marker <= 0xD8:  # Markers without a length.
+            i += 2
+        elif marker == 0xDA:  # The image data starts, and no frame header was found.
+            return None
+        elif marker in _JPEG_FRAMES:
+            if i + 9 > len(data):
+                return None
+            return int.from_bytes(data[i + 7 : i + 9], "big"), int.from_bytes(data[i + 5 : i + 7], "big")
+        else:
+            i += 2 + int.from_bytes(data[i + 2 : i + 4], "big")
+    return None
+
+
 def image_bytes_from_upload(contents: str) -> bytes:
     """Decode the ``data:<mime>;base64,<data>`` string a Dash upload produces."""
     encoded = contents.partition(",")[2]
@@ -76,6 +160,11 @@ def image_bytes_from_upload(contents: str) -> bytes:
     return data
 
 
+def _is_public_address(address: str) -> bool:
+    """Whether an IP address is on the public internet."""
+    return ipaddress.ip_address(address.split("%")[0]).is_global
+
+
 def _is_public_host(host: str) -> bool:
     """Whether every address ``host`` resolves to is on the public internet, so
     a link can't be used to probe the server's own network."""
@@ -83,7 +172,57 @@ def _is_public_host(host: str) -> bool:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
         return False
-    return all(ipaddress.ip_address(info[4][0]).is_global for info in infos)
+    return bool(infos) and all(_is_public_address(info[4][0]) for info in infos)
+
+
+def _connect_public(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, *args, **kwargs):
+    """Like ``socket.create_connection``, but connect only to an address just checked
+    to be public. Checking the link beforehand isn't enough on its own: a host's DNS
+    can answer with a public address for the check, then with one on the server's own
+    network a moment later, for the download (DNS rebinding)."""
+    host, port = address
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise OSError(f"Can't resolve {host}") from exc
+    if not infos or not all(_is_public_address(info[4][0]) for info in infos):
+        raise ImageError(_("Ce lien pointe vers une adresse inaccessible."))
+    error: OSError | None = None
+    for family, kind, proto, _name, target in infos:
+        sock = socket.socket(family, kind, proto)
+        try:
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(target)
+            return sock
+        except OSError as exc:
+            sock.close()
+            error = exc
+    raise error or OSError(f"Can't connect to {host}")
+
+
+class _PublicHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect_public
+
+
+class _PublicHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect_public
+
+
+class _PublicHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_PublicHTTPConnection, req)
+
+
+class _PublicHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_PublicHTTPSConnection, req, context=self._context)
 
 
 def _check_link(url: str) -> None:
@@ -100,11 +239,19 @@ class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
     forward the download to the server's own network."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        _check_link(newurl)
+        try:
+            _check_link(newurl)
+        except ImageError:
+            fp.close()  # urllib only closes the redirecting response once it follows it.
+            raise
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-_OPENER = urllib.request.build_opener(_CheckedRedirects)
+# No proxy: the server connects to the link itself, so that the address it checks is
+# the one it downloads from.
+_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}), _PublicHTTPHandler, _PublicHTTPSHandler, _CheckedRedirects
+)
 
 
 def image_bytes_from_url(url: str) -> bytes:
@@ -117,6 +264,8 @@ def image_bytes_from_url(url: str) -> bytes:
     except ImageError:
         raise  # A redirect that _check_link refused: its message says why.
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()  # It holds the response, and its connection, open.
         raise ImageError(_("Impossible de télécharger l'image depuis ce lien.")) from exc
     if len(data) > MAX_IMAGE_BYTES:
         raise ImageError(_("Image trop lourde (max {size} Mo).").format(size=MAX_IMAGE_BYTES // 2**20))
@@ -145,19 +294,33 @@ def save_source(data: bytes, name: str) -> str:
     :param data: Raw image file bytes (PNG, JPEG, WebP...).
     :param name: Original file name or URL, used to title the guide.
     """
+    size = image_size(data)
+    if size is None:
+        raise ImageError(_("Ce fichier n'est pas une image reconnue (PNG, JPEG, WebP…)."))
+    if size[0] * size[1] > MAX_IMAGE_PIXELS:
+        raise ImageError(
+            _("Image trop grande : {pixels} millions de pixels, {max} millions au plus.").format(
+                pixels=round(size[0] * size[1] / 10**6), max=MAX_IMAGE_PIXELS // 10**6
+            )
+        )
     img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         raise ImageError(_("Ce fichier n'est pas une image reconnue (PNG, JPEG, WebP…)."))
 
+    ok, png = cv2.imencode(".png", fit_within(img, MAX_SOURCE_DIMENSION))
+    if not ok:
+        raise ImageError(_("Impossible d'enregistrer cette image."))
+    return new_session(png.tobytes(), name)
+
+
+def new_session(png: bytes, name: str) -> str:
+    """Start a session from a PNG already checked and shrunk, and return its id."""
     _purge_old_sessions(time.time())
     session_id = uuid.uuid4().hex
     session = SESSION_ROOT / session_id
     session.mkdir(parents=True)
-    ok, png = cv2.imencode(".png", fit_within(img, MAX_SOURCE_DIMENSION))
-    if not ok:
-        raise ImageError(_("Impossible d'enregistrer cette image."))
     # Written via Python, not cv2.imwrite, which fails on non-ASCII paths on Windows.
-    (session / f"{_safe_stem(name)}.png").write_bytes(png.tobytes())
+    (session / f"{_safe_stem(name)}.png").write_bytes(png)
     return session_id
 
 
@@ -343,80 +506,98 @@ def render_styles(
     price estimate (see ``pricing.estimate_price``). ``tinted`` and ``improved_visibility``
     only concern the PDF guide, and are accepted so that the same settings can be passed to both.
 
-    Each style's mosaic is also kept in the session, for ``realistic_png``."""
+    Each style's mosaic is also kept in the session, for ``realistic_png``. A style
+    whose painted relief no longer fits the mosaic, after a change of size, says so with
+    ``relief_dropped``."""
     path = _working_image(session_id, crop)
-    results = []
-    for style, label in STYLE_LABELS.items():
-        try:
-            canvas = build_canvas(
-                size,
-                path,
-                frame=frame,
-                frame_color=frame_color,
-                max_colors=max_colors,
-                style=style,
-                palette=palette,
-                dither=dither,
-                round_tiles=round_tiles,
-                relief=relief,
-                assembly=assembly,
-                sharp=sharp,
-                accents=accents and round_tiles,
-                heights=_saved_edit(session_id, style),
-            )
-        except DepthError as exc:
-            raise ImageError(_("Relief par profondeur impossible : {reason}").format(reason=exc)) from exc
-        rows, cols = canvas.shape
-        distribution = canvas.get_distribution()
-        layout = canvas.layout(plates, round_tiles)
-        parts = layout.parts(canvas.get_brick_ids())
-        np.savez_compressed(
-            path_in_session(session_id, f"mosaic-{style}.npz"),
-            colors=canvas.to_pixel_array(),
-            regions=layout.regions,
-            heights=layout.heights,
-            border=canvas.border_mask(),
-            assembly=assembly,
-            plates=np.array([[p.row, p.col, p.height, p.width] for p in layout.plates], dtype=int).reshape(-1, 4),
-            supports=np.array(
-                [
-                    [number, p.row, p.col, p.height, p.width]
-                    for number, layer in enumerate(layout.supports, start=1)
-                    for p in layer
-                ],
-                dtype=int,
-            ).reshape(-1, 5),
-        )
-        price = canvas.get_price(baseplates, currency, parts)
-        image = (
-            canvas.to_preview_image(round_tiles) if relief == "flat" else canvas.to_realistic_image(plates, round_tiles)
-        )
-        results.append(
-            {
-                "style": style,
-                "label": label,
-                "image": _save_preview(session_id, style, image),
-                "round_tiles": round_tiles,
-                "relief": relief,
-                "smooth": round_tiles or relief != "flat",
-                "support_count": layout.support_count,
-                "assembly": assembly,
-                "assembly_count": layout.assembly_count,
-                "priced_baseplates": price.baseplate_count,
-                "studs": f"{cols} × {rows}",
-                "baseplates": canvas.baseplate_count,
-                "colors": len(distribution),
-                "bricks": sum(distribution.values()),
-                "plates": sum(parts.values()) - layout.assembly_count,
-                "round_tile_count": sum(count for (_, part), count in parts.items() if part == ROUND_TILE),
-                "distribution": distribution,
-                "parts": [[brick_id, part, count] for (brick_id, part), count in parts.items()],
-                "wanted_list": wanted_list_xml(distribution, parts),
-                **_price_fields(price),
-                "rare_colors": list(price.rare_colors),
-            }
-        )
-    return results
+    # A depth relief runs a neural network: it waits for its turn, like a PDF.
+    options = {
+        "frame": frame,
+        "frame_color": frame_color,
+        "max_colors": max_colors,
+        "palette": palette,
+        "dither": dither,
+        "round_tiles": round_tiles,
+        "relief": relief,
+        "assembly": assembly,
+        "sharp": sharp,
+        "accents": accents and round_tiles,
+    }
+    with _HeavyWork() if relief == "depth" else contextlib.nullcontext():
+        return [
+            _render_style(session_id, path, style, label, size, options, plates, baseplates, currency)
+            for style, label in STYLE_LABELS.items()
+        ]
+
+
+def _render_style(
+    session_id: str,
+    path: Path,
+    style: str,
+    label: str,
+    size: int,
+    options: dict[str, object],
+    plates: Iterable[str],
+    baseplates: str,
+    currency: str,
+) -> dict[str, object]:
+    """Render one style for ``render_styles``.
+
+    :param options: ``build_canvas``'s keyword arguments, but the style and the relief painted.
+    """
+    round_tiles, relief, assembly = options["round_tiles"], options["relief"], options["assembly"]
+    painted = _saved_edit(session_id, style)
+    try:
+        canvas = build_canvas(size, path, style=style, heights=painted, **options)
+    except DepthError as exc:
+        raise ImageError(_("Relief par profondeur impossible : {reason}").format(reason=exc)) from exc
+    rows, cols = canvas.shape
+    distribution = canvas.get_distribution()
+    layout = canvas.layout(plates, round_tiles)
+    parts = layout.parts(canvas.get_brick_ids())
+    np.savez_compressed(
+        path_in_session(session_id, f"mosaic-{style}.npz"),
+        colors=canvas.to_pixel_array(),
+        regions=layout.regions,
+        heights=layout.heights,
+        border=canvas.border_mask(),
+        assembly=assembly,
+        plates=np.array([[p.row, p.col, p.height, p.width] for p in layout.plates], dtype=int).reshape(-1, 4),
+        supports=np.array(
+            [
+                [number, p.row, p.col, p.height, p.width]
+                for number, layer in enumerate(layout.supports, start=1)
+                for p in layer
+            ],
+            dtype=int,
+        ).reshape(-1, 5),
+    )
+    price = canvas.get_price(baseplates, currency, parts)
+    image = canvas.to_preview_image(round_tiles) if relief == "flat" else canvas.to_realistic_image(plates, round_tiles)
+    return {
+        "style": style,
+        "label": label,
+        "image": _save_preview(session_id, style, image),
+        "round_tiles": round_tiles,
+        "relief": relief,
+        "relief_dropped": relief != "flat" and painted is not None and canvas.painted_heights is None,
+        "smooth": round_tiles or relief != "flat",
+        "support_count": layout.support_count,
+        "assembly": assembly,
+        "assembly_count": layout.assembly_count,
+        "priced_baseplates": price.baseplate_count,
+        "studs": f"{cols} × {rows}",
+        "baseplates": canvas.baseplate_count,
+        "colors": len(distribution),
+        "bricks": sum(distribution.values()),
+        "plates": sum(parts.values()) - layout.assembly_count,
+        "round_tile_count": sum(count for (_, part), count in parts.items() if part == ROUND_TILE),
+        "distribution": distribution,
+        "parts": [[brick_id, part, count] for (brick_id, part), count in parts.items()],
+        "wanted_list": wanted_list_xml(distribution, parts),
+        **_price_fields(price),
+        "rare_colors": list(price.rare_colors),
+    }
 
 
 def realistic_png(session_id: str, style: str) -> bytes:
@@ -482,13 +663,13 @@ def relief_data(session_id: str, style: str) -> dict[str, object]:
         }
 
 
-def _edit_path(session_id: str, style: str) -> Path:
+def relief_edit_path(session_id: str, style: str) -> Path:
     return path_in_session(session_id, f"relief-{style}.npy")
 
 
 def _saved_edit(session_id: str, style: str) -> np.ndarray | None:
     """Return the relief painted for a style, if any."""
-    path = _edit_path(session_id, style)
+    path = relief_edit_path(session_id, style)
     return np.load(path) if path.is_file() else None
 
 
@@ -514,7 +695,7 @@ def save_relief_edit(session_id: str, style: str, heights: object) -> None:
         raise ImageError(_("Ce relief ne correspond pas à la mosaïque.")) from exc
     grid = np.clip(grid, 0, MAX_PLATES)
     grid[border] = 0
-    np.save(_edit_path(session_id, style), clean_heights(grid))
+    np.save(relief_edit_path(session_id, style), clean_heights(grid))
 
 
 def mosaic_key(session_id: str, settings: dict[str, object]) -> dict[str, object]:
@@ -533,7 +714,7 @@ def clear_relief_edits(session_id: str) -> bool:
     ``restore_relief_edits`` can bring them back. Return whether there were any."""
     found = False
     for style in STYLE_LABELS:
-        path = _edit_path(session_id, style)
+        path = relief_edit_path(session_id, style)
         if path.is_file():
             path.replace(_set_aside_path(session_id, style))
             found = True
@@ -546,7 +727,7 @@ def restore_relief_edits(session_id: str) -> None:
     for style in STYLE_LABELS:
         path = _set_aside_path(session_id, style)
         if path.is_file():
-            path.replace(_edit_path(session_id, style))
+            path.replace(relief_edit_path(session_id, style))
 
 
 def build_pdf(
@@ -573,33 +754,47 @@ def build_pdf(
     """Write the build guide for one style as a PDF and return its path."""
     if style not in STYLE_LABELS:
         raise ImageError(_("Style inconnu."))
+    # Printing starts a full browser: it waits for its turn.
+    with _HeavyWork():
+        return _build_pdf(
+            session_id,
+            style,
+            size,
+            {
+                "frame": frame,
+                "frame_color": frame_color,
+                "max_colors": max_colors,
+                "palette": palette,
+                "dither": dither,
+                "round_tiles": round_tiles,
+                "relief": relief,
+                "assembly": assembly,
+                "sharp": sharp,
+                "accents": accents and round_tiles,
+            },
+            crop,
+            {
+                "baseplates": baseplates,
+                "currency": currency,
+                "tinted": tinted,
+                "improved_visibility": improved_visibility,
+                "plates": plates,
+                "round_tiles": round_tiles,
+            },
+        )
+
+
+def _build_pdf(
+    session_id: str,
+    style: str,
+    size: int,
+    options: dict[str, object],
+    crop: Crop | list[float] | None,
+    guide: dict[str, object],
+) -> Path:
     path = _working_image(session_id, crop)
-    canvas = build_canvas(
-        size,
-        path,
-        frame=frame,
-        frame_color=frame_color,
-        max_colors=max_colors,
-        style=style,
-        palette=palette,
-        dither=dither,
-        round_tiles=round_tiles,
-        relief=relief,
-        assembly=assembly,
-        sharp=sharp,
-        accents=accents and round_tiles,
-        heights=_saved_edit(session_id, style),
-    )
-    creator = PdfCreator(
-        canvas,
-        baseplates=baseplates,
-        currency=currency,
-        tinted=tinted,
-        improved_visibility=improved_visibility,
-        plates=plates,
-        lang=current_language(),
-        round_tiles=round_tiles,
-    )
+    canvas = build_canvas(size, path, style=style, heights=_saved_edit(session_id, style), **options)
+    creator = PdfCreator(canvas, lang=current_language(), **guide)
     return creator.generate_pdf(output_dir=source_path(session_id).parent / f"guide-{style}")
 
 

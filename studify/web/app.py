@@ -7,17 +7,19 @@ http://127.0.0.1:8050.
 from __future__ import annotations
 
 import argparse
+import json
 import time
+from urllib.parse import parse_qs, urlparse
 
 import dash_mantine_components as dmc
 import plotly.graph_objects as go
 from dash import ALL, Dash, Input, Output, Patch, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
-from flask import Response, abort, jsonify, redirect, request, send_file
+from flask import Response, abort, has_request_context, jsonify, redirect, request, send_file
 
 from studify.models.plates import ONLY_1X1, PLATE_SIZES
 from studify.models.static import DIM_BASE
-from studify.web import service
+from studify.web import projects, service
 from studify.web.i18n import COOKIE, LANGUAGES, _, current_language
 
 SIZES = range(1, 7)  # Baseplates along the longest side.
@@ -66,6 +68,260 @@ THEME = {
 HIDDEN = {"display": "none"}
 LANGUAGE_COOKIE_SECONDS = 365 * 24 * 3600
 BRICKLINK_UPLOAD_URL = "https://www.bricklink.com/v2/wanted/upload.page"
+# Requests the production server handles at once. Renders hold one for seconds; PDFs
+# and depth reliefs are also limited on their own (see service.MAX_CONCURRENT_HEAVY).
+SERVER_THREADS = 8
+
+# What each step-2 control starts at, by its id, and the property holding its value.
+DEFAULT_CONTROLS = {
+    "size": 3,
+    "frame": 2,
+    "frame-color": "black",
+    "max-colors": "0",
+    "palette": "buyable",
+    "dither": False,
+    "accents": False,
+    "sharp": False,
+    "plates": list(PLATE_SIZES),
+    "mode": "flat",
+    "assembly": "baseplates",
+    "improved-visibility": False,
+    "tinted": True,
+    "baseplates": "official",
+    "currency": "EUR",
+}
+SWITCHES = ("dither", "accents", "sharp", "improved-visibility", "tinted")
+# Projects listed in "Your projects", most recent first.
+MAX_LISTED_PROJECTS = 30
+THUMBNAIL_PREFIX = "data:image/jpeg;base64,"
+# Relief settings, by the mode offered for them.
+MODE_RELIEFS = {"relief": "stepped", "depth": "depth"}
+
+
+def control_prop(control: str) -> str:
+    """Return the property holding a step-2 control's value."""
+    return "checked" if control in SWITCHES else "value"
+
+
+def settings_from_controls(controls: dict[str, object], crop: list[float] | None) -> dict[str, object]:
+    """Return the settings a render is made with, from the step-2 controls' values."""
+    return {
+        "size": controls["size"],
+        "frame": controls["frame"],
+        "frame_color": controls["frame-color"],
+        "max_colors": int(controls["max-colors"]) or None,
+        "crop": crop,
+        "baseplates": controls["baseplates"],
+        "currency": controls["currency"],
+        "palette": controls["palette"],
+        "dither": bool(controls["dither"]),
+        "plates": controls["plates"],
+        "tinted": bool(controls["tinted"]),
+        "round_tiles": controls["mode"] == "round",
+        "relief": MODE_RELIEFS.get(controls["mode"], "flat"),
+        "assembly": controls["assembly"],
+        "sharp": bool(controls["sharp"]),
+        "accents": bool(controls["accents"]),
+        "improved_visibility": bool(controls["improved-visibility"]),
+    }
+
+
+def controls_from_settings(settings: object) -> dict[str, object]:
+    """
+    Return the step-2 controls' values for a render's settings, as a saved project
+    keeps them. Anything a control doesn't offer, as from an older or altered
+    project, is left at its default.
+    """
+    settings = settings if isinstance(settings, dict) else {}
+    controls = dict(DEFAULT_CONTROLS)
+
+    def pick(control: str, value: object, choices) -> None:
+        if not isinstance(value, bool) and value in choices:
+            controls[control] = value
+
+    pick("size", settings.get("size"), SIZES)
+    pick("frame", settings.get("frame"), FRAMES)
+    pick("frame-color", settings.get("frame_color"), [value for _label, value in FRAME_COLOR_CHOICES])
+    max_colors = settings.get("max_colors")
+    pick("max-colors", "0" if max_colors is None else str(max_colors), [value for _label, value in COLOR_LIMITS])
+    pick("palette", settings.get("palette"), [value for _label, value in PALETTE_CHOICES])
+    pick("assembly", settings.get("assembly"), [value for _label, value in ASSEMBLY_CHOICES])
+    pick("baseplates", settings.get("baseplates"), [value for _label, value in BASEPLATE_CHOICES])
+    pick("currency", settings.get("currency"), [value for _label, value in CURRENCY_CHOICES])
+    for control in SWITCHES:
+        value = settings.get(control.replace("-", "_"))
+        if isinstance(value, bool):
+            controls[control] = value
+    plates = settings.get("plates")
+    if isinstance(plates, list):
+        controls["plates"] = [size for size in PLATE_SIZES if size in plates or size in ONLY_1X1]
+    if settings.get("round_tiles") is True:
+        controls["mode"] = "round"
+    else:
+        modes = {relief: mode for mode, relief in MODE_RELIEFS.items()}
+        controls["mode"] = modes.get(settings.get("relief"), "flat")
+    return controls
+
+
+def clean_crop(crop: object) -> list[float] | None:
+    """Return a crop as the page keeps it, or None if it isn't one."""
+    try:
+        crop = service.validate_crop(crop)
+    except (TypeError, ValueError):
+        return None
+    return None if crop is None else [round(v, 4) for v in crop]
+
+
+def opening_page(project_id: str, stores: dict[str, object]) -> str:
+    """
+    The page that opens a project: it puts the project's session in the browser tab's
+    stores, as a reload would find them, forgets the settings changed before in this
+    tab, which would otherwise win over the project's, then goes to the app.
+    """
+    data = json.dumps(stores).replace("<", "\\u003c")
+    target = f"/?project={project_id}"
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Studify</title></head>
+<body><a href="{target}">Studify</a>
+<script>
+const stores = {data};
+for (const key of Object.keys(sessionStorage)) {{
+  if (key.startsWith("_dash_persistence.")) {{ sessionStorage.removeItem(key); }}
+}}
+for (const [id, value] of Object.entries(stores)) {{
+  sessionStorage.setItem(id, JSON.stringify(value));
+  sessionStorage.setItem(id + "-timestamp", String(Date.now()));
+}}
+location.replace("{target}");
+</script></body></html>"""
+
+
+def _project_list(entries: list[dict[str, object]]) -> object:
+    """The "Your projects" list: each with its preview, a link to open it, and a button to delete it."""
+    if not entries:
+        return None
+    cards = []
+    for entry in entries:
+        thumbnail = entry.get("thumbnail")
+        cards.append(
+            dmc.Paper(
+                dmc.Group(
+                    [
+                        html.Img(
+                            src=thumbnail
+                            if isinstance(thumbnail, str) and thumbnail.startswith(THUMBNAIL_PREFIX)
+                            else "",
+                            className="project-thumbnail",
+                        ),
+                        dmc.Stack(
+                            [
+                                dmc.Text(str(entry.get("name", "")), fw=600, size="sm", truncate="end"),
+                                dmc.Text(
+                                    time.strftime("%d/%m/%Y", time.localtime(float(entry.get("saved") or 0))),
+                                    c="dimmed",
+                                    size="xs",
+                                ),
+                                dmc.Group(
+                                    [
+                                        dmc.Anchor(_("Ouvrir"), href=f"/p/{entry['id']}", size="sm", refresh=True),
+                                        dmc.Button(
+                                            _("Supprimer"),
+                                            id={"type": "project-delete", "index": entry["id"]},
+                                            variant="subtle",
+                                            color="gray",
+                                            size="compact-xs",
+                                        ),
+                                    ],
+                                    gap="sm",
+                                ),
+                            ],
+                            gap=2,
+                            style={"minWidth": 0},
+                        ),
+                    ],
+                    gap="sm",
+                    wrap="nowrap",
+                ),
+                withBorder=True,
+                radius="md",
+                p="xs",
+            )
+        )
+    return [
+        dmc.Divider(my="lg"),
+        dmc.Text(_("Tes projets"), fw=600, size="sm"),
+        dmc.Text(
+            _("Enregistrés dans ce navigateur. Chacun reste disponible 90 jours après sa dernière ouverture."),
+            c="dimmed",
+            size="xs",
+            mb="sm",
+        ),
+        dmc.SimpleGrid(cards, cols={"base": 1, "sm": 2, "md": 3}, spacing="sm"),
+    ]
+
+
+def _listed(entries: object) -> list[dict[str, object]]:
+    """The "Your projects" entries the browser sent that look like ones the app wrote."""
+    if not isinstance(entries, list):
+        return []
+    return [
+        entry
+        for entry in entries
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str) and projects.PROJECT_ID.match(entry["id"])
+    ][:MAX_LISTED_PROJECTS]
+
+
+def _share_panel(url: str) -> dmc.Stack:
+    return dmc.Stack(
+        [
+            dmc.Group(
+                [
+                    dmc.TextInput(id="share-url", value=url, readOnly=True, style={"flex": 1}),
+                    dmc.Button(_("Copier le lien"), id="copy-share", variant="light"),
+                ],
+                gap="sm",
+            ),
+            html.Div(id="copy-share-status"),
+            dmc.Text(
+                _(
+                    "Ce lien rouvre la photo, les réglages, le style choisi et le relief peint. Toute personne qui a "
+                    "le lien peut voir ta photo. Ce que tu changes ensuite ne modifie pas le lien : enregistre à "
+                    "nouveau pour en avoir un nouveau."
+                ),
+                c="dimmed",
+                size="xs",
+            ),
+        ],
+        gap=4,
+        mt="sm",
+    )
+
+
+def page_query() -> dict[str, str]:
+    """
+    Return the query of the page's address. The layout isn't built for the page's own
+    request but for ``/_dash-layout``, which the page fetches without its query: the
+    query is then read from the address the request came from.
+    """
+    if not has_request_context():
+        return {}
+    if request.args:
+        return request.args.to_dict()
+    referrer = urlparse(request.referrer or "")
+    if referrer.netloc and referrer.netloc != request.host:
+        return {}
+    return {key: values[0] for key, values in parse_qs(referrer.query).items()}
+
+
+def _project_in_url() -> tuple[str | None, dict[str, object] | None]:
+    """Return the project the page was opened from, and what it was saved with."""
+    project_id = page_query().get("project")
+    if not project_id:
+        return None, None
+    try:
+        return project_id, projects.read_project(project_id)
+    except projects.ProjectError:
+        return None, None
 
 
 def _step(number: int, title: str, subtitle: str, *children) -> dmc.Paper:
@@ -95,6 +351,10 @@ def _error(message: str) -> dmc.Alert:
 
 
 def _layout() -> dmc.MantineProvider:
+    project_id, project = _project_in_url()
+    initial = controls_from_settings(project["settings"]) if project else DEFAULT_CONTROLS
+    # Switching language reloads the page: it should come back to the same project.
+    language_query = f"?project={project_id}" if project_id else ""
     hero = dmc.Stack(
         [
             dmc.Group(
@@ -106,7 +366,7 @@ def _layout() -> dmc.MantineProvider:
                 [
                     dmc.Anchor(
                         code.upper(),
-                        href=f"/lang/{code}",
+                        href=f"/lang/{code}{language_query}",
                         size="sm",
                         fw=700 if code == current_language() else 400,
                         # Plain browser navigation: this has to reach the server to set the cookie.
@@ -161,7 +421,14 @@ def _layout() -> dmc.MantineProvider:
             cols={"base": 1, "sm": 2},
             spacing="lg",
         ),
-        html.Div(id="source-status", className="status"),
+        html.Div(
+            id="source-status",
+            className="status",
+            children=_error(_("Projet introuvable : il a peut-être expiré ou été supprimé."))
+            if page_query().get("missing")
+            else None,
+        ),
+        html.Div(id="my-projects-list"),
         html.Div(
             [
                 dmc.Divider(my="lg"),
@@ -229,7 +496,7 @@ def _layout() -> dmc.MantineProvider:
                             min=SIZES[0],
                             max=SIZES[-1],
                             step=1,
-                            value=3,
+                            value=initial["size"],
                             marks=[{"value": n, "label": str(n)} for n in SIZES],
                             restrictToMarks=True,
                             mb="md",
@@ -247,7 +514,7 @@ def _layout() -> dmc.MantineProvider:
                             min=FRAMES[0],
                             max=FRAMES[-1],
                             step=1,
-                            value=2,
+                            value=initial["frame"],
                             marks=[
                                 {"value": n, "label": _("aucun") if n == 0 else _("{n} tenon(s)").format(n=n)}
                                 for n in FRAMES
@@ -260,7 +527,7 @@ def _layout() -> dmc.MantineProvider:
                             persistence=True,
                             persistence_type="session",
                             data=[{"label": _(label), "value": value} for label, value in FRAME_COLOR_CHOICES],
-                            value="black",
+                            value=initial["frame-color"],
                             radius="xl",
                             style={"alignSelf": "flex-start"},
                         ),
@@ -280,7 +547,7 @@ def _layout() -> dmc.MantineProvider:
                             persistence=True,
                             persistence_type="session",
                             data=[{"label": _(label), "value": value} for label, value in COLOR_LIMITS],
-                            value="0",
+                            value=initial["max-colors"],
                             radius="xl",
                         ),
                     ],
@@ -304,7 +571,7 @@ def _layout() -> dmc.MantineProvider:
                             persistence=True,
                             persistence_type="session",
                             data=[{"label": _(label), "value": value} for label, value in PALETTE_CHOICES],
-                            value="buyable",
+                            value=initial["palette"],
                             radius="xl",
                         ),
                     ],
@@ -315,6 +582,7 @@ def _layout() -> dmc.MantineProvider:
                     [
                         dmc.Switch(
                             id="dither",
+                            checked=initial["dither"],
                             persistence=True,
                             persistence_type="session",
                             label=_("Tramage"),
@@ -324,6 +592,7 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Switch(
                             id="accents",
+                            checked=initial["accents"],
                             persistence=True,
                             persistence_type="session",
                             label=_("Accents or et argent"),
@@ -333,6 +602,7 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Switch(
                             id="sharp",
+                            checked=initial["sharp"],
                             persistence=True,
                             persistence_type="session",
                             label=_("Contours nets"),
@@ -358,7 +628,7 @@ def _layout() -> dmc.MantineProvider:
                                 "Moins de pièces à poser avec les grandes tuiles, dans le guide et la liste "
                                 "BrickLink, et un prix estimé plus bas. La 1x1 reste nécessaire pour les tenons isolés."
                             ),
-                            value=list(PLATE_SIZES),
+                            value=initial["plates"],
                         ),
                         dmc.Stack(
                             [
@@ -385,7 +655,7 @@ def _layout() -> dmc.MantineProvider:
                                     persistence=True,
                                     persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in MODE_CHOICES],
-                                    value="flat",
+                                    value=initial["mode"],
                                     radius="xl",
                                     style={"alignSelf": "flex-start"},
                                 ),
@@ -410,7 +680,7 @@ def _layout() -> dmc.MantineProvider:
                                     persistence=True,
                                     persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in ASSEMBLY_CHOICES],
-                                    value="baseplates",
+                                    value=initial["assembly"],
                                     radius="xl",
                                     style={"alignSelf": "flex-start"},
                                 ),
@@ -419,6 +689,7 @@ def _layout() -> dmc.MantineProvider:
                         ),
                         dmc.Switch(
                             id="improved-visibility",
+                            checked=initial["improved-visibility"],
                             persistence=True,
                             persistence_type="session",
                             label=_("Visibilité améliorée"),
@@ -433,7 +704,7 @@ def _layout() -> dmc.MantineProvider:
                             persistence_type="session",
                             label=_("Cartes en couleur"),
                             description=_("Teinte chaque tenon dans le guide. Désactive-le pour économiser l'encre."),
-                            checked=True,
+                            checked=initial["tinted"],
                         ),
                     ],
                     gap="sm",
@@ -453,7 +724,7 @@ def _layout() -> dmc.MantineProvider:
                                     persistence=True,
                                     persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in BASEPLATE_CHOICES],
-                                    value="official",
+                                    value=initial["baseplates"],
                                     radius="xl",
                                 ),
                             ],
@@ -468,7 +739,7 @@ def _layout() -> dmc.MantineProvider:
                                     persistence=True,
                                     persistence_type="session",
                                     data=[{"label": _(label), "value": value} for label, value in CURRENCY_CHOICES],
-                                    value="EUR",
+                                    value=initial["currency"],
                                     radius="xl",
                                 ),
                             ],
@@ -518,6 +789,11 @@ def _layout() -> dmc.MantineProvider:
             ],
             gap="md",
         ),
+        dmc.Group(
+            dmc.Button(_("Enregistrer et partager"), id="save-project", variant="outline", disabled=True),
+            mt="md",
+        ),
+        html.Div(id="share-area"),
         dmc.Text(
             [
                 _(
@@ -552,7 +828,7 @@ def _layout() -> dmc.MantineProvider:
                 dcc.Store(id="rendered", storage_type="session"),  # What the current mosaics were made from.
                 dcc.Store(id="settings"),  # The settings the current previews were made with.
                 dcc.Store(id="builds"),  # {style: {"distribution", "baseplates"}}, to reprice without refitting.
-                dcc.Store(id="selected-style"),
+                dcc.Store(id="selected-style", storage_type="session"),
                 dcc.Store(id="previews"),  # {style: {"image", "label"}}, for the enlarged view.
                 dmc.Modal(html.Img(id="preview-image", className="preview-image"), id="preview-modal", size="auto"),
                 dmc.Modal(
@@ -572,6 +848,7 @@ def _layout() -> dmc.MantineProvider:
                     fullScreen=True,
                 ),
                 dcc.Store(id="lang", data=current_language()),
+                dcc.Store(id="my-projects", storage_type="local"),  # The projects saved in this browser.
                 dcc.Store(id="viewer-url"),
                 dmc.Modal(html.Div(id="relief-stage", className="relief-stage"), id="relief-modal", fullScreen=True),
                 dcc.Store(id="relief-url"),
@@ -837,9 +1114,114 @@ def create_app() -> Dash:
     app = Dash(__name__, title="Studify", assets_ignore=r"^three\.")
     app.layout = _layout  # Called for each request: it depends on the language.
 
+    @app.server.route("/p/<project_id>")
+    def open_project(project_id):
+        try:
+            session_id, project = projects.open_project(project_id)
+            _uri, width, height = service.preview(service.source_path(session_id))
+        except service.ImageError:
+            return redirect("/?missing=1")
+        crop = clean_crop(project["settings"].get("crop"))
+        settings = settings_from_controls(controls_from_settings(project["settings"]), crop)
+        stores = {
+            "source": {"session": session_id, "name": project["name"], "width": width, "height": height},
+            "crop": crop,
+            # As if this mosaic had just been made here: its painted relief and chosen style stay.
+            "rendered": service.mosaic_key(session_id, settings),
+            "selected-style": project["selected"],
+        }
+        return Response(
+            opening_page(project_id, stores),
+            mimetype="text/html",
+            headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"},
+        )
+
+    @app.callback(
+        Output("save-project", "disabled"),
+        Output("share-area", "children", allow_duplicate=True),
+        Input("settings", "data"),
+        prevent_initial_call=True,
+    )
+    def enable_saving(settings):
+        # A link saved earlier no longer shows what's on screen.
+        return not settings, None
+
+    @app.callback(
+        Output("share-area", "children"),
+        Output("my-projects", "data"),
+        Input("save-project", "n_clicks"),
+        State("source", "data"),
+        State("settings", "data"),
+        State("selected-style", "data"),
+        State("my-projects", "data"),
+        running=[(Output("save-project", "loading"), True, False)],
+        prevent_initial_call=True,
+    )
+    def save_project(_clicks, source, settings, selected, listed):
+        if not (source and settings):
+            raise PreventUpdate
+        checked = settings_from_controls(controls_from_settings(settings), clean_crop(settings.get("crop")))
+        try:
+            project = projects.save_project(source["session"], source.get("name", "image"), checked, selected)
+        except service.ImageError as exc:
+            return _error(str(exc)), no_update
+        url = f"{request.host_url.rstrip('/')}/p/{project['id']}"
+        return _share_panel(url), [project, *_listed(listed)][:MAX_LISTED_PROJECTS]
+
+    @app.callback(
+        Output("my-projects-list", "children"),
+        Output("my-projects", "data", allow_duplicate=True),
+        Input("my-projects", "data"),
+        prevent_initial_call="initial_duplicate",
+    )
+    def list_projects(listed):
+        entries = _listed(listed)
+        # Projects expired or deleted elsewhere are dropped from the list.
+        kept = projects.kept([entry["id"] for entry in entries])
+        entries = [entry for entry in entries if entry["id"] in kept]
+        return _project_list(entries), (entries if entries != listed and listed is not None else no_update)
+
+    @app.callback(
+        Output("my-projects", "data", allow_duplicate=True),
+        Input({"type": "project-delete", "index": ALL}, "n_clicks"),
+        State("my-projects", "data"),
+        prevent_initial_call=True,
+    )
+    def delete_project(clicks, listed):
+        # The list being (re)drawn also fires this, with no clicks: ignore that.
+        if not ctx.triggered_id or not any(clicks):
+            raise PreventUpdate
+        project_id = ctx.triggered_id["index"]
+        entries = _listed(listed)
+        for entry in entries:
+            if entry["id"] == project_id:
+                projects.delete_project(project_id, entry.get("token"))
+        return [entry for entry in entries if entry["id"] != project_id]
+
+    app.clientside_callback(
+        """
+        async function (clicks, url, language) {
+            if (!clicks || !url) { return window.dash_clientside.no_update; }
+            const english = language === "en";
+            try {
+                await navigator.clipboard.writeText(url);
+                return english ? "Link copied." : "Lien copié.";
+            } catch (error) {
+                return english ? "Can't copy here: select the link instead." : "Copie impossible ici : sélectionne le lien.";
+            }
+        }
+        """,
+        Output("copy-share-status", "children"),
+        Input("copy-share", "n_clicks"),
+        State("share-url", "value"),
+        State("lang", "data"),
+        prevent_initial_call=True,
+    )
+
     @app.server.route("/lang/<code>")
     def set_language(code):
-        response = redirect("/")
+        project_id = request.args.get("project", "")
+        response = redirect(f"/?project={project_id}" if projects.PROJECT_ID.match(project_id) else "/")
         if code in LANGUAGES:
             response.set_cookie(COOKIE, code, max_age=LANGUAGE_COOKIE_SECONDS, samesite="Lax")
         return response
@@ -952,6 +1334,7 @@ def create_app() -> Dash:
         State("accents", "checked"),
         State("improved-visibility", "checked"),
         State("rendered", "data"),
+        State("selected-style", "data"),
         running=[(Output("generate", "loading"), True, False), (Output("depth-poll", "disabled"), False, True)],
         prevent_initial_call=True,
     )
@@ -975,28 +1358,28 @@ def create_app() -> Dash:
         accents,
         improved_visibility,
         rendered,
+        selected,
     ):
         if not source:
             return (no_update,) * 8
-        settings = {
+        controls = {
             "size": size,
             "frame": frame,
-            "frame_color": frame_color,
-            "max_colors": int(max_colors) or None,
-            "crop": crop,
+            "frame-color": frame_color,
+            "max-colors": max_colors,
+            "palette": palette,
+            "dither": dither,
+            "accents": accents,
+            "sharp": sharp,
+            "plates": plates,
+            "mode": mode,
+            "assembly": assembly,
+            "improved-visibility": improved_visibility,
+            "tinted": tinted,
             "baseplates": baseplates,
             "currency": currency,
-            "palette": palette,
-            "dither": bool(dither),
-            "plates": plates,
-            "tinted": bool(tinted),
-            "round_tiles": mode == "round",
-            "relief": {"relief": "stepped", "depth": "depth"}.get(mode, "flat"),
-            "assembly": assembly,
-            "sharp": bool(sharp),
-            "accents": bool(accents),
-            "improved_visibility": bool(improved_visibility),
         }
+        settings = settings_from_controls(controls, crop)
         try:
             # The same mosaic again, as after a reload, keeps any relief painted on it.
             mosaic = service.mosaic_key(source["session"], settings)
@@ -1012,7 +1395,9 @@ def create_app() -> Dash:
             else ""
         )
         restore = {} if lost else HIDDEN
-        return _cards(results), settings, None, _builds(results), _previews(results), status, restore, mosaic
+        # The same mosaic again, as after a reload or a change of language, keeps its chosen style.
+        selected = selected if mosaic == rendered else None
+        return _cards(results), settings, selected, _builds(results), _previews(results), status, restore, mosaic
 
     @app.callback(
         Output("crop-graph", "figure", allow_duplicate=True),
@@ -1086,12 +1471,22 @@ def create_app() -> Dash:
             results = service.render_styles(source["session"], **settings)
         except service.ImageError as exc:
             return no_update, no_update, no_update, no_update, _error(str(exc)), no_update
-        status = dmc.Text(
-            _("Le relief est modifié : le prix, la liste et le guide suivent. Clique sur un style pour le choisir.")
-            + _(" Générer à nouveau le retirera, mais tu pourras le récupérer."),
-            c="green",
-            size="sm",
-        )
+        dropped = [_(service.STYLE_LABELS[result["style"]]) for result in results if result["relief_dropped"]]
+        if dropped:
+            status = dmc.Text(
+                _(
+                    "Le relief peint ne va plus sur {styles} : la mosaïque a changé de taille. Remets les réglages d'avant, génère, puis récupère-le."
+                ).format(styles=", ".join(dropped)),
+                c="orange",
+                size="sm",
+            )
+        else:
+            status = dmc.Text(
+                _("Le relief est modifié : le prix, la liste et le guide suivent. Clique sur un style pour le choisir.")
+                + _(" Générer à nouveau le retirera, mais tu pourras le récupérer."),
+                c="green",
+                size="sm",
+            )
         return _cards(results), None, _builds(results), _previews(results), status, HIDDEN
 
     # Painted in the browser (see assets/relief_editor.js).
@@ -1399,9 +1794,24 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="studify-web", description="Run the Studify web app.")
     parser.add_argument("--host", default="127.0.0.1", help="Interface to listen on (default: %(default)s).")
     parser.add_argument("--port", type=int, default=8050, help="Port to listen on (default: %(default)s).")
-    parser.add_argument("--debug", action="store_true", help="Enable Dash hot reload and the debug panel.")
+    parser.add_argument(
+        "--debug", action="store_true", help="Use Flask's development server, with hot reload and the debug panel."
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=SERVER_THREADS,
+        help="Requests served at once (default: %(default)s). Rendering ties one up for seconds.",
+    )
     args = parser.parse_args(argv)
-    create_app().run(host=args.host, port=args.port, debug=args.debug)
+    app = create_app()
+    if args.debug:
+        app.run(host=args.host, port=args.port, debug=True)
+    else:
+        import waitress
+
+        print(f"Studify on http://{args.host}:{args.port}")
+        waitress.serve(app.server, host=args.host, port=args.port, threads=args.threads)
     return 0
 
 

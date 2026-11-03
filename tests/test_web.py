@@ -102,6 +102,7 @@ class TestRedirects:
     @pytest.fixture
     def server(self, png_bytes, monkeypatch):
         monkeypatch.setattr(service, "_is_public_host", lambda host: host == "localhost")
+        monkeypatch.setattr(service, "_is_public_address", lambda address: True)
 
         class Handler(BaseHTTPRequestHandler):
             hits = []
@@ -608,3 +609,110 @@ def test_reprice_matches_a_fresh_render(png_bytes):
     prices = service.reprice(distribution, official["baseplates"], "compatible", "USD", official["parts"])
 
     assert prices == {key: compatible[key] for key in ("price", "price_bricks", "price_baseplates")}
+
+
+class TestImageSize:
+    """Sizes are read from the file's header, before anything is decoded."""
+
+    @pytest.mark.parametrize("extension", [".png", ".jpg", ".webp", ".bmp"])
+    def test_reads_the_size_of_each_format(self, extension):
+        ok, data = cv2.imencode(extension, np.zeros((30, 70, 3), dtype=np.uint8))
+        assert ok
+        assert service.image_size(data.tobytes()) == (70, 30)
+
+    def test_reads_a_lossless_webp(self):
+        ok, data = cv2.imencode(".webp", np.zeros((30, 70, 3), dtype=np.uint8), [cv2.IMWRITE_WEBP_QUALITY, 101])
+        assert ok and data.tobytes()[12:16] == b"VP8L"
+        assert service.image_size(data.tobytes()) == (70, 30)
+
+    def test_reads_a_progressive_jpeg_past_its_other_segments(self):
+        img = np.random.default_rng(0).integers(0, 255, (30, 70, 3), dtype=np.uint8)
+        ok, data = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_PROGRESSIVE, 1])
+        assert ok
+        assert service.image_size(data.tobytes()) == (70, 30)
+
+    @pytest.mark.parametrize("data", [b"", b"%PDF-1.7", b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff\xda\x00\x02"])
+    def test_anything_else_has_no_size(self, data):
+        assert service.image_size(data) is None
+
+    def test_refuses_too_many_pixels_before_decoding(self, monkeypatch):
+        ok, data = cv2.imencode(".png", np.zeros((100, 100, 3), dtype=np.uint8))
+        monkeypatch.setattr(service, "MAX_IMAGE_PIXELS", 9_999)
+
+        def no_decoding(*args):
+            raise AssertionError("decoded")
+
+        monkeypatch.setattr(service.cv2, "imdecode", no_decoding)
+        with pytest.raises(service.ImageError, match="trop grande"):
+            service.save_source(data.tobytes(), "huge.png")
+
+
+class TestDnsRebinding:
+    def test_the_download_connects_only_to_a_public_address(self, monkeypatch):
+        """The link check passes, then the host resolves to the server itself: the
+        download must not go there."""
+        monkeypatch.setattr(service, "_is_public_host", lambda host: True)
+        with pytest.raises(service.ImageError, match="inaccessible"):
+            service.image_bytes_from_url("http://localhost:9/image.png")
+
+    def test_connects_to_the_address_it_checked(self, monkeypatch):
+        connected = []
+
+        class FakeSocket:
+            def __init__(self, *args):
+                pass
+
+            def settimeout(self, timeout):
+                pass
+
+            def connect(self, target):
+                connected.append(target)
+
+        monkeypatch.setattr(
+            service.socket,
+            "getaddrinfo",
+            lambda host, port, type: [(service.socket.AF_INET, service.socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))],
+        )
+        monkeypatch.setattr(service.socket, "socket", FakeSocket)
+        service._connect_public(("example.com", 80), 5)
+        assert connected == [("8.8.8.8", 80)]
+
+
+class TestHeavyWork:
+    @pytest.fixture
+    def busy(self, monkeypatch):
+        monkeypatch.setattr(service, "_heavy_slots", threading.BoundedSemaphore(1))
+        monkeypatch.setattr(service, "HEAVY_WAIT_SECONDS", 0.01)
+        service._heavy_slots.acquire()  # Someone else is printing.
+        yield
+        service._heavy_slots.release()
+
+    def test_a_pdf_waits_its_turn_then_gives_up(self, png_bytes, busy, monkeypatch):
+        monkeypatch.setattr(pdf_creator, "html_to_pdf", lambda html, pdf: pytest.fail("printed"))
+        session = service.save_source(png_bytes, "flag.png")
+        with pytest.raises(service.ImageError, match="très demandé"):
+            service.build_pdf(session, size=1, frame=0, max_colors=8, style="pop")
+
+    def test_a_depth_relief_waits_its_turn_but_a_flat_one_does_not(self, png_bytes, busy):
+        session = service.save_source(png_bytes, "flag.png")
+        assert service.render_styles(session, size=1, frame=0, max_colors=None)
+        with pytest.raises(service.ImageError, match="très demandé"):
+            service.render_styles(session, size=1, frame=0, max_colors=None, relief="depth")
+
+    def test_a_slot_is_given_back_and_can_be_nested(self, monkeypatch):
+        monkeypatch.setattr(service, "_heavy_slots", threading.BoundedSemaphore(1))
+        with service._HeavyWork(), service._HeavyWork():
+            assert not service._heavy_slots.acquire(blocking=False)
+        assert service._heavy_slots.acquire(blocking=False)
+        service._heavy_slots.release()
+
+
+def test_a_relief_that_no_longer_fits_is_reported(png_bytes):
+    session = service.save_source(png_bytes, "flag.png")
+    service.render_styles(session, size=1, frame=0, max_colors=None, relief="stepped")
+    service.save_relief_edit(session, "pop", [0] * (32 * 32))
+
+    same = service.render_styles(session, size=1, frame=0, max_colors=None, relief="stepped")
+    assert [r["relief_dropped"] for r in same] == [False, False, False]
+    larger = service.render_styles(session, size=2, frame=0, max_colors=None, relief="stepped")
+    assert [r["style"] for r in larger if r["relief_dropped"]] == ["pop"]
