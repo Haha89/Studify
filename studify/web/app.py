@@ -71,11 +71,14 @@ BRICKLINK_UPLOAD_URL = "https://www.bricklink.com/v2/wanted/upload.page"
 # Requests the production server handles at once. Renders hold one for seconds; PDFs
 # and depth reliefs are also limited on their own (see service.MAX_CONCURRENT_HEAVY).
 SERVER_THREADS = 8
+# Largest request the server reads: a 15 MB picture, sent as base64, is about 20 MB. Without
+# a limit, a request is read whole into memory before anything checks its size.
+MAX_REQUEST_BYTES = 25 * 2**20
 
 # What each step-2 control starts at, by its id, and the property holding its value.
 DEFAULT_CONTROLS = {
     "size": 3,
-    "frame": 2,
+    "frame": "2",
     "frame-color": "black",
     "max-colors": "0",
     "palette": "buyable",
@@ -94,20 +97,22 @@ SWITCHES = ("dither", "accents", "sharp", "improved-visibility", "tinted")
 # Projects listed in "Your projects", most recent first.
 MAX_LISTED_PROJECTS = 30
 THUMBNAIL_PREFIX = "data:image/jpeg;base64,"
+# What each finish is, on its card.
+MODE_DESCRIPTIONS = {
+    "flat": "Des tuiles lisses carrées et rectangulaires, toutes à la même hauteur.",
+    "round": "Une tuile ronde 1x1 par tenon, façon LEGO Art. Plus de pièces, et la baseplate se voit entre les tuiles : choisis-la sombre.",
+    "relief": "Le sujet surélevé sur des plaques noires cachées, son centre plus haut encore. Détecté automatiquement, il peut être imprécis. Pas encore testé avec de vraies briques.",
+    "depth": "Comme Relief, jusqu'à 4 plaques, selon la distance qu'un modèle estime pour chaque zone. Il se télécharge une fois (27 Mo).",
+}
 # Relief settings, by the mode offered for them.
 MODE_RELIEFS = {"relief": "stepped", "depth": "depth"}
-
-
-def control_prop(control: str) -> str:
-    """Return the property holding a step-2 control's value."""
-    return "checked" if control in SWITCHES else "value"
 
 
 def settings_from_controls(controls: dict[str, object], crop: list[float] | None) -> dict[str, object]:
     """Return the settings a render is made with, from the step-2 controls' values."""
     return {
         "size": controls["size"],
-        "frame": controls["frame"],
+        "frame": int(controls["frame"]),
         "frame_color": controls["frame-color"],
         "max_colors": int(controls["max-colors"]) or None,
         "crop": crop,
@@ -126,41 +131,73 @@ def settings_from_controls(controls: dict[str, object], crop: list[float] | None
     }
 
 
-def controls_from_settings(settings: object) -> dict[str, object]:
-    """
-    Return the step-2 controls' values for a render's settings, as a saved project
-    keeps them. Anything a control doesn't offer, as from an older or altered
-    project, is left at its default.
-    """
-    settings = settings if isinstance(settings, dict) else {}
-    controls = dict(DEFAULT_CONTROLS)
+def _choices() -> dict[str, list[object]]:
+    """What each step-2 control with a fixed set of values offers."""
+    return {
+        "size": list(SIZES),
+        "frame": [str(n) for n in FRAMES],
+        "frame-color": [value for _label, value in FRAME_COLOR_CHOICES],
+        "max-colors": [value for _label, value in COLOR_LIMITS],
+        "palette": [value for _label, value in PALETTE_CHOICES],
+        "mode": [value for _label, value in MODE_CHOICES],
+        "assembly": [value for _label, value in ASSEMBLY_CHOICES],
+        "baseplates": [value for _label, value in BASEPLATE_CHOICES],
+        "currency": [value for _label, value in CURRENCY_CHOICES],
+    }
 
-    def pick(control: str, value: object, choices) -> None:
+
+def clean_controls(raw: object) -> dict[str, object]:
+    """
+    Return the step-2 controls' values, each checked against what its control offers.
+    The page sends them with every request, and a request can be made by hand: an
+    unchecked size of 300 would take all the server's memory. Anything a control
+    doesn't offer is left at its default.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    controls = dict(DEFAULT_CONTROLS)
+    for control, choices in _choices().items():
+        value = raw.get(control)
         if not isinstance(value, bool) and value in choices:
             controls[control] = value
-
-    pick("size", settings.get("size"), SIZES)
-    pick("frame", settings.get("frame"), FRAMES)
-    pick("frame-color", settings.get("frame_color"), [value for _label, value in FRAME_COLOR_CHOICES])
-    max_colors = settings.get("max_colors")
-    pick("max-colors", "0" if max_colors is None else str(max_colors), [value for _label, value in COLOR_LIMITS])
-    pick("palette", settings.get("palette"), [value for _label, value in PALETTE_CHOICES])
-    pick("assembly", settings.get("assembly"), [value for _label, value in ASSEMBLY_CHOICES])
-    pick("baseplates", settings.get("baseplates"), [value for _label, value in BASEPLATE_CHOICES])
-    pick("currency", settings.get("currency"), [value for _label, value in CURRENCY_CHOICES])
     for control in SWITCHES:
-        value = settings.get(control.replace("-", "_"))
-        if isinstance(value, bool):
-            controls[control] = value
-    plates = settings.get("plates")
+        if isinstance(raw.get(control), bool):
+            controls[control] = raw[control]
+    plates = raw.get("plates")
     if isinstance(plates, list):
         controls["plates"] = [size for size in PLATE_SIZES if size in plates or size in ONLY_1X1]
-    if settings.get("round_tiles") is True:
-        controls["mode"] = "round"
-    else:
-        modes = {relief: mode for mode, relief in MODE_RELIEFS.items()}
-        controls["mode"] = modes.get(settings.get("relief"), "flat")
     return controls
+
+
+def controls_from_settings(settings: object) -> dict[str, object]:
+    """Return the step-2 controls' values for a render's settings, as a saved project
+    or the page's stores keep them, checked by ``clean_controls``."""
+    settings = settings if isinstance(settings, dict) else {}
+    max_colors = settings.get("max_colors")
+    if settings.get("round_tiles") is True:
+        mode = "round"
+    else:
+        mode = {relief: mode for mode, relief in MODE_RELIEFS.items()}.get(settings.get("relief"), "flat")
+    return clean_controls(
+        {
+            "size": settings.get("size"),
+            "frame": str(settings.get("frame")),
+            "frame-color": settings.get("frame_color"),
+            "max-colors": "0" if max_colors is None else str(max_colors),
+            "palette": settings.get("palette"),
+            "mode": mode,
+            "assembly": settings.get("assembly"),
+            "baseplates": settings.get("baseplates"),
+            "currency": settings.get("currency"),
+            "plates": settings.get("plates"),
+            **{control: settings.get(control.replace("-", "_")) for control in SWITCHES},
+        }
+    )
+
+
+def clean_settings(settings: object) -> dict[str, object]:
+    """Return a render's settings, as the page sent them back, with every value checked."""
+    crop = settings.get("crop") if isinstance(settings, dict) else None
+    return settings_from_controls(controls_from_settings(settings), clean_crop(crop))
 
 
 def clean_crop(crop: object) -> list[float] | None:
@@ -324,18 +361,32 @@ def _project_in_url() -> tuple[str | None, dict[str, object] | None]:
         return None, None
 
 
-def _step(number: int, title: str, subtitle: str, *children) -> dmc.Paper:
+def _switch(control: str, initial: dict[str, object], label: str, description: str) -> dmc.Switch:
+    return dmc.Switch(
+        id=control,
+        checked=initial[control],
+        persistence=True,
+        persistence_type="session",
+        label=label,
+        description=description,
+    )
+
+
+def _step(number: int, title: str, subtitle: str, *children, aside=None) -> dmc.Paper:
+    """One numbered step of the page; ``aside`` goes on the right of its title."""
+    heading = dmc.Group(
+        [
+            dmc.ThemeIcon(str(number), radius="xl", size="lg", variant="filled"),
+            dmc.Stack([dmc.Title(title, order=3), dmc.Text(subtitle, c="dimmed", size="sm")], gap=0),
+        ],
+        gap="md",
+        wrap="nowrap",
+    )
     return dmc.Paper(
         [
-            dmc.Group(
-                [
-                    dmc.ThemeIcon(str(number), radius="xl", size="lg", variant="filled"),
-                    dmc.Stack([dmc.Title(title, order=3), dmc.Text(subtitle, c="dimmed", size="sm")], gap=0),
-                ],
-                gap="md",
-                mb="lg",
-                wrap="nowrap",
-            ),
+            dmc.Group([heading, aside], justify="space-between", align="flex-start", mb="lg")
+            if aside is not None  # A component without children is falsy.
+            else dmc.Box(heading, mb="lg"),
             *children,
         ],
         withBorder=True,
@@ -506,250 +557,289 @@ def _layout() -> dmc.MantineProvider:
                 ),
                 dmc.Stack(
                     [
-                        dmc.Text(_("Cadre autour de l'image"), fw=600, size="sm"),
-                        dmc.Slider(
-                            id="frame",
-                            persistence=True,
-                            persistence_type="session",
-                            min=FRAMES[0],
-                            max=FRAMES[-1],
-                            step=1,
-                            value=initial["frame"],
-                            marks=[
-                                {"value": n, "label": _("aucun") if n == 0 else _("{n} tenon(s)").format(n=n)}
-                                for n in FRAMES
-                            ],
-                            restrictToMarks=True,
-                            mb="md",
-                        ),
-                        dmc.SegmentedControl(
-                            id="frame-color",
-                            persistence=True,
-                            persistence_type="session",
-                            data=[{"label": _(label), "value": value} for label, value in FRAME_COLOR_CHOICES],
-                            value=initial["frame-color"],
-                            radius="xl",
-                            style={"alignSelf": "flex-start"},
-                        ),
-                    ],
-                    gap=6,
-                ),
-                dmc.Stack(
-                    [
-                        dmc.Text(_("Nombre de couleurs maximum"), fw=600, size="sm"),
-                        dmc.Text(
-                            _("Moins de couleurs : plus simple à commander, et un rendu plus graphique."),
-                            c="dimmed",
-                            size="xs",
-                        ),
-                        dmc.SegmentedControl(
-                            id="max-colors",
-                            persistence=True,
-                            persistence_type="session",
-                            data=[{"label": _(label), "value": value} for label, value in COLOR_LIMITS],
-                            value=initial["max-colors"],
-                            radius="xl",
-                        ),
-                    ],
-                    gap=6,
-                    align="flex-start",
-                ),
-                dmc.Stack(
-                    [
-                        dmc.Text(_("Palette de couleurs"), fw=600, size="sm"),
-                        dmc.Text(
-                            _(
-                                "Les couleurs rares (anciens gris et bruns, pastels…) sont chères et dures à trouver "
-                                "en quantité. Les écarter change peu le rendu et baisse nettement le prix. "
-                                "Le style Pop art garde sa propre palette."
-                            ),
-                            c="dimmed",
-                            size="xs",
-                        ),
-                        dmc.SegmentedControl(
-                            id="palette",
-                            persistence=True,
-                            persistence_type="session",
-                            data=[{"label": _(label), "value": value} for label, value in PALETTE_CHOICES],
-                            value=initial["palette"],
-                            radius="xl",
-                        ),
-                    ],
-                    gap=6,
-                    align="flex-start",
-                ),
-                dmc.Stack(
-                    [
-                        dmc.Switch(
-                            id="dither",
-                            checked=initial["dither"],
-                            persistence=True,
-                            persistence_type="session",
-                            label=_("Tramage"),
-                            description=_(
-                                "Mélange les couleurs pour simuler celles qui manquent. Plus lent à calculer."
-                            ),
-                        ),
-                        dmc.Switch(
-                            id="accents",
-                            checked=initial["accents"],
-                            persistence=True,
-                            persistence_type="session",
-                            label=_("Accents or et argent"),
-                            description=_(
-                                "En mode Tuiles rondes seulement : quelques touches d'or et d'argent sur les petites zones dorées ou grises. Une grande zone ne change que si c'est très probablement du métal. Sans effet avec une limite de couleurs ou dans les autres modes."
-                            ),
-                        ),
-                        dmc.Switch(
-                            id="sharp",
-                            checked=initial["sharp"],
-                            persistence=True,
-                            persistence_type="session",
-                            label=_("Contours nets"),
-                            description=_(
-                                "Pour les logos et les aplats : chaque tenon prend la couleur qui le couvre le "
-                                "plus, sans teinte intermédiaire sur les bords. À éviter sur les photos. Sans effet avec "
-                                "le tramage."
-                            ),
-                        ),
-                        dmc.CheckboxGroup(
-                            dmc.Group(
+                        dmc.Text(_("Finition"), fw=600, size="sm"),
+                        dmc.RadioGroup(
+                            dmc.SimpleGrid(
                                 [
-                                    dmc.Checkbox(label=size, value=size, disabled=size in ONLY_1X1)
-                                    for size in PLATE_SIZES
+                                    dmc.RadioCard(
+                                        dmc.Stack(
+                                            [
+                                                html.Img(
+                                                    src=f"/assets/finish-{value}.svg",
+                                                    className="finish-picture",
+                                                    alt="",
+                                                ),
+                                                dmc.Text(_(label), fw=600, size="sm"),
+                                                dmc.Text(_(MODE_DESCRIPTIONS[value]), c="dimmed", size="xs"),
+                                            ],
+                                            gap=4,
+                                        ),
+                                        value=value,
+                                        className="finish-card",
+                                        radius="md",
+                                        p="sm",
+                                    )
+                                    for label, value in MODE_CHOICES
                                 ],
-                                mt="xs",
+                                cols={"base": 2, "sm": 4},
+                                spacing="sm",
                             ),
-                            id="plates",
+                            id="mode",
                             persistence=True,
                             persistence_type="session",
-                            label=_("Tailles de tuiles"),
-                            description=_(
-                                "Moins de pièces à poser avec les grandes tuiles, dans le guide et la liste "
-                                "BrickLink, et un prix estimé plus bas. La 1x1 reste nécessaire pour les tenons isolés."
-                            ),
-                            value=initial["plates"],
-                        ),
-                        dmc.Stack(
-                            [
-                                dmc.Text(_("Mode"), fw=600, size="sm"),
-                                dmc.Text(
-                                    _(
-                                        "Plat : uniquement des tuiles lisses carrées et rectangulaires, à même hauteur. "
-                                        "Tuiles rondes : une tuile ronde 1x1 par tenon pour l'image, façon LEGO Art, et "
-                                        "le cadre en tuiles lisses 1x4 ; plus de pièces, un prix estimé plus haut, et la "
-                                        "baseplate se voit entre les tuiles, alors choisis-la sombre. Relief : "
-                                        "uniquement des tuiles lisses carrées et rectangulaires, le sujet surélevé sur des "
-                                        "plaques noires cachées, son centre plus haut encore, avec une carte par couche "
-                                        "dans le guide. Le sujet est détecté automatiquement et peut être imprécis ; le "
-                                        "relief n'est pas encore testé avec de vraies briques. "
-                                        "Profondeur : comme Relief, mais un modèle "
-                                        "estime la distance de chaque zone, jusqu'à 4 plaques cachées ; il se "
-                                        "télécharge à la première utilisation (27 Mo)."
-                                    ),
-                                    c="dimmed",
-                                    size="xs",
-                                ),
-                                dmc.SegmentedControl(
-                                    id="mode",
-                                    persistence=True,
-                                    persistence_type="session",
-                                    data=[{"label": _(label), "value": value} for label, value in MODE_CHOICES],
-                                    value=initial["mode"],
-                                    radius="xl",
-                                    style={"alignSelf": "flex-start"},
-                                ),
-                            ],
-                            gap=6,
-                        ),
-                        dmc.Stack(
-                            [
-                                dmc.Text(_("Support"), fw=600, size="sm"),
-                                dmc.Text(
-                                    _(
-                                        "Baseplates : moins cher, mais elles ne se relient pas entre elles, il faut les "
-                                        "fixer sur un panneau rigide. Panneaux LEGO Art : les panneaux 16 x 16 à goujons "
-                                        "et le cadre en briques des sets officiels, à accrocher tels quels jusqu'à environ "
-                                        "1 m ; plus cher, toutes les pièces sont dans la liste. Non testé en vrai."
-                                    ),
-                                    c="dimmed",
-                                    size="xs",
-                                ),
-                                dmc.SegmentedControl(
-                                    id="assembly",
-                                    persistence=True,
-                                    persistence_type="session",
-                                    data=[{"label": _(label), "value": value} for label, value in ASSEMBLY_CHOICES],
-                                    value=initial["assembly"],
-                                    radius="xl",
-                                    style={"alignSelf": "flex-start"},
-                                ),
-                            ],
-                            gap=6,
-                        ),
-                        dmc.Switch(
-                            id="improved-visibility",
-                            checked=initial["improved-visibility"],
-                            persistence=True,
-                            persistence_type="session",
-                            label=_("Visibilité améliorée"),
-                            description=_(
-                                "Dans le guide : des cartes plus grandes, avec des numéros plus gros et des lignes plus "
-                                "épaisses, et une case à cocher pour chaque pièce. Le guide compte plus de pages."
-                            ),
-                        ),
-                        dmc.Switch(
-                            id="tinted",
-                            persistence=True,
-                            persistence_type="session",
-                            label=_("Cartes en couleur"),
-                            description=_("Teinte chaque tenon dans le guide. Désactive-le pour économiser l'encre."),
-                            checked=initial["tinted"],
+                            value=initial["mode"],
                         ),
                     ],
-                    gap="sm",
+                    gap=6,
+                ),
+                dmc.SimpleGrid(
+                    [
+                        dmc.Stack(
+                            [
+                                dmc.Text(_("Cadre autour de l'image"), fw=600, size="sm"),
+                                dmc.Group(
+                                    [
+                                        dmc.SegmentedControl(
+                                            id="frame",
+                                            persistence=True,
+                                            persistence_type="session",
+                                            data=[
+                                                {
+                                                    "label": _("aucun") if n == 0 else _("{n} tenon(s)").format(n=n),
+                                                    "value": str(n),
+                                                }
+                                                for n in FRAMES
+                                            ],
+                                            value=initial["frame"],
+                                            radius="xl",
+                                            size="xs",
+                                        ),
+                                        dmc.SegmentedControl(
+                                            id="frame-color",
+                                            persistence=True,
+                                            persistence_type="session",
+                                            data=[
+                                                {"label": _(label), "value": value}
+                                                for label, value in FRAME_COLOR_CHOICES
+                                            ],
+                                            value=initial["frame-color"],
+                                            radius="xl",
+                                            size="xs",
+                                        ),
+                                    ],
+                                    gap="xs",
+                                ),
+                            ],
+                            gap=6,
+                        ),
+                        dmc.Stack(
+                            [
+                                dmc.Text(_("Nombre de couleurs maximum"), fw=600, size="sm"),
+                                dmc.SegmentedControl(
+                                    id="max-colors",
+                                    persistence=True,
+                                    persistence_type="session",
+                                    data=[{"label": _(label), "value": value} for label, value in COLOR_LIMITS],
+                                    value=initial["max-colors"],
+                                    radius="xl",
+                                    size="xs",
+                                    style={"alignSelf": "flex-start"},
+                                ),
+                                dmc.Text(
+                                    _("Moins de couleurs : plus simple à commander, et un rendu plus graphique."),
+                                    c="dimmed",
+                                    size="xs",
+                                ),
+                            ],
+                            gap=6,
+                        ),
+                    ],
+                    cols={"base": 1, "sm": 2},
+                    spacing="lg",
+                ),
+                dmc.Accordion(
+                    dmc.AccordionItem(
+                        [
+                            dmc.AccordionControl(
+                                dmc.Group(
+                                    [
+                                        dmc.Text(_("Plus de réglages"), fw=600, size="sm"),
+                                        dmc.Text(
+                                            _("palette, tramage, contours, support, baseplates, tailles de tuiles"),
+                                            c="dimmed",
+                                            size="xs",
+                                        ),
+                                    ],
+                                    gap="sm",
+                                )
+                            ),
+                            dmc.AccordionPanel(
+                                dmc.SimpleGrid(
+                                    [
+                                        dmc.Stack(
+                                            [
+                                                dmc.Text(_("Couleurs"), className="group-title"),
+                                                dmc.Stack(
+                                                    [
+                                                        dmc.Text(_("Palette de couleurs"), fw=600, size="sm"),
+                                                        dmc.SegmentedControl(
+                                                            id="palette",
+                                                            persistence=True,
+                                                            persistence_type="session",
+                                                            data=[
+                                                                {"label": _(label), "value": value}
+                                                                for label, value in PALETTE_CHOICES
+                                                            ],
+                                                            value=initial["palette"],
+                                                            radius="xl",
+                                                            size="xs",
+                                                            style={"alignSelf": "flex-start"},
+                                                        ),
+                                                        dmc.Text(
+                                                            _(
+                                                                "Les couleurs rares (anciens gris et bruns, pastels…) sont chères et dures à trouver "
+                                                                "en quantité. Les écarter change peu le rendu et baisse nettement le prix. "
+                                                                "Le style Pop art garde sa propre palette."
+                                                            ),
+                                                            c="dimmed",
+                                                            size="xs",
+                                                        ),
+                                                    ],
+                                                    gap=6,
+                                                ),
+                                                _switch(
+                                                    "dither",
+                                                    initial,
+                                                    _("Tramage"),
+                                                    _(
+                                                        "Mélange les couleurs pour simuler celles qui manquent. Plus lent à calculer."
+                                                    ),
+                                                ),
+                                                _switch(
+                                                    "sharp",
+                                                    initial,
+                                                    _("Contours nets"),
+                                                    _(
+                                                        "Pour les logos et les aplats : chaque tenon prend la couleur qui le couvre le "
+                                                        "plus, sans teinte intermédiaire sur les bords. À éviter sur les photos. Sans effet avec "
+                                                        "le tramage."
+                                                    ),
+                                                ),
+                                                html.Div(
+                                                    _switch(
+                                                        "accents",
+                                                        initial,
+                                                        _("Accents or et argent"),
+                                                        _(
+                                                            "Quelques touches d'or et d'argent sur les petites zones dorées ou grises. Une grande zone ne change que si c'est très probablement du métal. Sans effet avec une limite de couleurs."
+                                                        ),
+                                                    ),
+                                                    id="accents-area",
+                                                ),
+                                            ],
+                                            gap="sm",
+                                        ),
+                                        dmc.Stack(
+                                            [
+                                                dmc.Text(_("Pièces"), className="group-title"),
+                                                dmc.Stack(
+                                                    [
+                                                        dmc.Text(_("Support"), fw=600, size="sm"),
+                                                        dmc.SegmentedControl(
+                                                            id="assembly",
+                                                            persistence=True,
+                                                            persistence_type="session",
+                                                            data=[
+                                                                {"label": _(label), "value": value}
+                                                                for label, value in ASSEMBLY_CHOICES
+                                                            ],
+                                                            value=initial["assembly"],
+                                                            radius="xl",
+                                                            size="xs",
+                                                            style={"alignSelf": "flex-start"},
+                                                        ),
+                                                        dmc.Text(
+                                                            _(
+                                                                "Baseplates : moins cher, mais elles ne se relient pas entre elles, il faut les "
+                                                                "fixer sur un panneau rigide. Panneaux LEGO Art : les panneaux 16 x 16 à goujons "
+                                                                "et le cadre en briques des sets officiels, à accrocher tels quels jusqu'à environ "
+                                                                "1 m ; plus cher, toutes les pièces sont dans la liste. Non testé en vrai."
+                                                            ),
+                                                            c="dimmed",
+                                                            size="xs",
+                                                        ),
+                                                    ],
+                                                    gap=6,
+                                                ),
+                                                dmc.Stack(
+                                                    [
+                                                        dmc.Text(_("Baseplates"), fw=600, size="sm"),
+                                                        dmc.SegmentedControl(
+                                                            id="baseplates",
+                                                            persistence=True,
+                                                            persistence_type="session",
+                                                            data=[
+                                                                {"label": _(label), "value": value}
+                                                                for label, value in BASEPLATE_CHOICES
+                                                            ],
+                                                            value=initial["baseplates"],
+                                                            radius="xl",
+                                                            size="xs",
+                                                            style={"alignSelf": "flex-start"},
+                                                        ),
+                                                        dmc.Text(
+                                                            _("Officielles LEGO ≈ 9 € pièce, compatibles ≈ 2 €."),
+                                                            c="dimmed",
+                                                            size="xs",
+                                                        ),
+                                                    ],
+                                                    gap=6,
+                                                ),
+                                                html.Div(
+                                                    dmc.CheckboxGroup(
+                                                        dmc.Group(
+                                                            [
+                                                                dmc.Checkbox(
+                                                                    label=size, value=size, disabled=size in ONLY_1X1
+                                                                )
+                                                                for size in PLATE_SIZES
+                                                            ],
+                                                            mt="xs",
+                                                        ),
+                                                        id="plates",
+                                                        persistence=True,
+                                                        persistence_type="session",
+                                                        label=_("Tailles de tuiles"),
+                                                        description=_(
+                                                            "Moins de pièces à poser avec les grandes tuiles, dans le guide et la liste "
+                                                            "BrickLink, et un prix estimé plus bas. La 1x1 reste nécessaire pour les tenons isolés."
+                                                        ),
+                                                        value=initial["plates"],
+                                                    ),
+                                                    id="plates-area",
+                                                ),
+                                            ],
+                                            gap="sm",
+                                        ),
+                                    ],
+                                    cols={"base": 1, "sm": 2},
+                                    spacing="xl",
+                                )
+                            ),
+                        ],
+                        value="more",
+                    ),
+                    variant="contained",
+                    radius="md",
                 ),
                 dmc.Group(
                     [
-                        dmc.Stack(
-                            [
-                                dmc.Text(_("Baseplates"), fw=600, size="sm"),
-                                dmc.Text(
-                                    _("Officielles LEGO ≈ 9 € pièce, compatibles ≈ 2 €."),
-                                    c="dimmed",
-                                    size="xs",
-                                ),
-                                dmc.SegmentedControl(
-                                    id="baseplates",
-                                    persistence=True,
-                                    persistence_type="session",
-                                    data=[{"label": _(label), "value": value} for label, value in BASEPLATE_CHOICES],
-                                    value=initial["baseplates"],
-                                    radius="xl",
-                                ),
-                            ],
-                            gap=6,
-                        ),
-                        dmc.Stack(
-                            [
-                                dmc.Text(_("Devise"), fw=600, size="sm"),
-                                dmc.Text(_("Pour l'estimation du prix."), c="dimmed", size="xs"),
-                                dmc.SegmentedControl(
-                                    id="currency",
-                                    persistence=True,
-                                    persistence_type="session",
-                                    data=[{"label": _(label), "value": value} for label, value in CURRENCY_CHOICES],
-                                    value=initial["currency"],
-                                    radius="xl",
-                                ),
-                            ],
-                            gap=6,
-                        ),
+                        dmc.Text(id="choices-summary", c="dimmed", size="sm"),
+                        dmc.Button(_("Générer les styles"), id="generate", size="md", disabled=True),
                     ],
-                    gap="xl",
-                    align="flex-start",
+                    justify="space-between",
+                    className="choices-bar",
                 ),
-                dmc.Group(dmc.Button(_("Générer les styles"), id="generate", size="md", disabled=True), mt="sm"),
                 html.Div(id="depth-status", className="status"),
                 # Only runs while the styles are being made.
                 dcc.Interval(id="depth-poll", interval=1000, disabled=True),
@@ -769,6 +859,15 @@ def _layout() -> dmc.MantineProvider:
             style=HIDDEN,
         ),
         html.Div(id="styles"),
+        aside=dmc.SegmentedControl(
+            id="currency",
+            persistence=True,
+            persistence_type="session",
+            data=[{"label": _(label), "value": value} for label, value in CURRENCY_CHOICES],
+            value=initial["currency"],
+            radius="xl",
+            size="xs",
+        ),
     )
 
     download = _step(
@@ -784,13 +883,34 @@ def _layout() -> dmc.MantineProvider:
                 dmc.Button(
                     _("Télécharger la liste"), id="download-bricklink", size="md", variant="subtle", disabled=True
                 ),
+                dmc.Button(
+                    _("Enregistrer et partager"), id="save-project", size="md", variant="outline", disabled=True
+                ),
                 html.Div(id="copy-status"),
                 html.Div(id="pdf-status"),
             ],
             gap="md",
         ),
         dmc.Group(
-            dmc.Button(_("Enregistrer et partager"), id="save-project", variant="outline", disabled=True),
+            [
+                _switch(
+                    "improved-visibility",
+                    initial,
+                    _("Visibilité améliorée"),
+                    _(
+                        "Dans le guide : des cartes plus grandes, avec des numéros plus gros et des lignes plus "
+                        "épaisses, et une case à cocher pour chaque pièce. Le guide compte plus de pages."
+                    ),
+                ),
+                _switch(
+                    "tinted",
+                    initial,
+                    _("Cartes en couleur"),
+                    _("Teinte chaque tenon dans le guide. Désactive-le pour économiser l'encre."),
+                ),
+            ],
+            grow=True,
+            align="flex-start",
             mt="md",
         ),
         html.Div(id="share-area"),
@@ -1113,6 +1233,7 @@ def create_app() -> Dash:
     # Three.js is an ES module, which viewer.js imports when needed: not a page script.
     app = Dash(__name__, title="Studify", assets_ignore=r"^three\.")
     app.layout = _layout  # Called for each request: it depends on the language.
+    app.server.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 
     @app.server.route("/p/<project_id>")
     def open_project(project_id):
@@ -1121,8 +1242,8 @@ def create_app() -> Dash:
             _uri, width, height = service.preview(service.source_path(session_id))
         except service.ImageError:
             return redirect("/?missing=1")
-        crop = clean_crop(project["settings"].get("crop"))
-        settings = settings_from_controls(controls_from_settings(project["settings"]), crop)
+        settings = clean_settings(project["settings"])
+        crop = settings["crop"]
         stores = {
             "source": {"session": session_id, "name": project["name"], "width": width, "height": height},
             "crop": crop,
@@ -1160,7 +1281,7 @@ def create_app() -> Dash:
     def save_project(_clicks, source, settings, selected, listed):
         if not (source and settings):
             raise PreventUpdate
-        checked = settings_from_controls(controls_from_settings(settings), clean_crop(settings.get("crop")))
+        checked = clean_settings(settings)
         try:
             project = projects.save_project(source["session"], source.get("name", "image"), checked, selected)
         except service.ImageError as exc:
@@ -1302,6 +1423,46 @@ def create_app() -> Dash:
             size=size, studs=studs, cm=studs * STUD_MM / 10
         )
 
+    @app.callback(
+        Output("accents-area", "style"),
+        Output("plates-area", "style"),
+        Output("sharp", "disabled"),
+        Input("mode", "value"),
+        Input("dither", "checked"),
+    )
+    def show_what_applies(mode, dither):
+        # Only round tiles come in gold and silver, and they are always 1x1.
+        round_tiles = mode == "round"
+        return ({} if round_tiles else HIDDEN), (HIDDEN if round_tiles else {}), bool(dither)
+
+    @app.callback(
+        Output("choices-summary", "children"),
+        Input("size", "value"),
+        Input("mode", "value"),
+        Input("frame", "value"),
+        Input("frame-color", "value"),
+        Input("max-colors", "value"),
+    )
+    def describe_choices(size, mode, frame, frame_color, max_colors):
+        controls = clean_controls(
+            {"size": size, "mode": mode, "frame": frame, "frame-color": frame_color, "max-colors": max_colors}
+        )
+        modes = dict((value, label) for label, value in MODE_CHOICES)
+        colors = dict((value, label) for label, value in FRAME_COLOR_CHOICES)
+        parts = [
+            _("≈ {cm:.0f} cm").format(cm=controls["size"] * DIM_BASE * STUD_MM / 10),
+            _(modes[controls["mode"]]),
+            _("sans cadre")
+            if controls["frame"] == "0"
+            else _("cadre {color} de {n} tenon(s)").format(
+                color=_(colors[controls["frame-color"]]).lower(), n=controls["frame"]
+            ),
+            _("toutes les couleurs")
+            if controls["max-colors"] == "0"
+            else _("{n} couleurs au plus").format(n=controls["max-colors"]),
+        ]
+        return " · ".join(parts)
+
     @app.callback(Output("generate", "disabled"), Input("source", "data"))
     def enable_generate(source):
         return not source
@@ -1379,7 +1540,7 @@ def create_app() -> Dash:
             "baseplates": baseplates,
             "currency": currency,
         }
-        settings = settings_from_controls(controls, crop)
+        settings = settings_from_controls(clean_controls(controls), clean_crop(crop))
         try:
             # The same mosaic again, as after a reload, keeps any relief painted on it.
             mosaic = service.mosaic_key(source["session"], settings)
@@ -1465,6 +1626,7 @@ def create_app() -> Dash:
     def apply_relief_edit(_saved, _restore, source, settings):
         if not (source and settings):
             raise PreventUpdate
+        settings = clean_settings(settings)
         try:
             if ctx.triggered_id == "relief-restore":
                 service.restore_relief_edits(source["session"])
@@ -1660,6 +1822,8 @@ def create_app() -> Dash:
         # does the selected style. The settings are updated for the PDF guide.
         if not (settings and builds):
             raise PreventUpdate  # no_update isn't accepted for the wildcard outputs.
+        settings = clean_settings({**settings, "baseplates": baseplates, "currency": currency})
+        baseplates, currency = settings["baseplates"], settings["currency"]
         prices = [
             service.reprice(build["distribution"], build["baseplates"], baseplates, currency, build["parts"])
             for build in (builds[price_id["index"]] for price_id in price_ids)
@@ -1667,7 +1831,7 @@ def create_app() -> Dash:
         return (
             [price["price"] for price in prices],
             [_price_detail(price) for price in prices],
-            {**settings, "baseplates": baseplates, "currency": currency},
+            settings,
         )
 
     @app.callback(
@@ -1732,7 +1896,7 @@ def create_app() -> Dash:
         if not (source and settings and style):
             return no_update, no_update
         try:
-            service.build_pdf(source["session"], style=style, **settings)
+            service.build_pdf(source["session"], style=style, **clean_settings(settings))
         except (service.ImageError, RuntimeError) as exc:
             return no_update, _error(str(exc))
         # The timestamp makes the URL change on every build, so the download re-triggers.

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import sys
-from types import ModuleType
-
 import pytest
 
 from studify.cli import main
@@ -44,17 +41,6 @@ def test_builds_a_guide_end_to_end(red_blue_image, tmp_path, capsys):
     assert "Canvas: 32 x 32 studs (1 x 1 baseplates)" in stdout
     assert "Total elements: 1024" in stdout
     assert "Total estimated cost:" in stdout
-
-
-def test_gui_flag_launches_the_gui_without_an_image(monkeypatch):
-    """--gui must not require an image, and must not need customtkinter installed."""
-    launched = []
-    fake_gui = ModuleType("studify.gui")
-    fake_gui.run_gui = lambda: launched.append(True)
-    monkeypatch.setitem(sys.modules, "studify.gui", fake_gui)
-
-    assert main(["--gui"]) == 0
-    assert launched == [True]
 
 
 @pytest.mark.parametrize("size", ["0", "-1"])

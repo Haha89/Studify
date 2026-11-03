@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="studify",
         description="Turn an image into a LEGO mosaic build guide.",
     )
-    parser.add_argument("image", type=Path, nargs="?", help="Path to the source image.")
+    parser.add_argument("image", type=Path, help="Path to the source image.")
     parser.add_argument(
         "-s",
         "--size",
@@ -164,17 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         default="EUR",
         help="Currency of the price estimate (default: %(default)s).",
     )
-    parser.add_argument("--gui", action="store_true", help="Launch the graphical interface instead.")
     args = parser.parse_args(argv)
 
-    if args.gui:
-        from studify.gui import run_gui
-
-        run_gui()
-        return 0
-
-    if args.image is None:
-        parser.error("the following arguments are required: image (or pass --gui)")
     if args.round_tiles and args.relief != "flat":
         parser.error("--relief is built on stacks of plates, so can't be used with --round-tiles")
     if args.accents and not args.round_tiles:

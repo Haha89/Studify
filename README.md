@@ -43,7 +43,7 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
 
 ```bash
 uv sync                  # core dependencies
-uv sync --all-extras     # also install the optional GUI and web app
+uv sync --all-extras     # also install the web app and the depth relief
 ```
 
 ## Use
@@ -67,14 +67,11 @@ uv run studify pics/dog.png -s 3 --frame 2 --style comic
 
 # Also write a BrickLink wanted list, to order the bricks in one go
 uv run studify pics/dog.png -s 3 --bricklink
-
-# Graphical interface (needs `uv sync --all-extras`)
-uv run studify --gui
 ```
 
 | Flag | Meaning |
 | --- | --- |
-| `image` | Path to the source image. Required unless `--gui`. |
+| `image` | Path to the source image. |
 | `-s`, `--size` | Baseplates along the longest side (default `4`). |
 | `-o`, `--output-dir` | Where to write the guide (default `./output`). |
 | `--no-plot` | Skip the matplotlib preview. |
@@ -101,7 +98,6 @@ uv run studify --gui
 | `--bricklink` | Also write a BrickLink wanted list, `<image-name>-bricklink.xml`, beside the guide. |
 | `--baseplates` | Price `official` LEGO baseplates (default) or cheaper `compatible` ones. |
 | `--currency` | Currency of the price estimate: `EUR` (default) or `USD`. |
-| `--gui` | Launch the graphical interface. |
 
 The guide lands at `<output-dir>/<image-name>.html`. Open it and print to PDF — the
 stylesheet puts one baseplate on each page — or call `PdfCreator.generate_pdf`.
@@ -235,7 +231,6 @@ estimates (sources in the module), kept in plain tables so they are easy to upda
 studify/
   cli.py              argparse entry point (`studify`)
   process.py          image -> mosaic -> guide, one call
-  gui.py              optional customtkinter front end
   export/             Jinja2 template, print stylesheet and the guide's wording
   models/
     brick.py          immutable Brick (palette id + RGB)

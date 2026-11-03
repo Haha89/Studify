@@ -80,9 +80,6 @@ ENGLISH = {
         "Blends colours to imitate the ones missing. Slower to work out."
     ),
     "Accents or et argent": "Gold and silver accents",
-    "En mode Tuiles rondes seulement : quelques touches d'or et d'argent sur les petites zones dorées ou grises. Une grande zone ne change que si c'est très probablement du métal. Sans effet avec une limite de couleurs ou dans les autres modes.": (
-        "In Round tiles mode only: a few touches of gold and silver on small golden or grey spots. A large area only changes if it very likely is metal. No effect with a colour limit or in the other modes."
-    ),
     "Contours nets": "Sharp edges",
     "Pour les logos et les aplats : chaque tenon prend la couleur qui le couvre le plus, sans teinte "
     "intermédiaire sur les bords. À éviter sur les photos. Sans effet avec le tramage.": (
@@ -94,23 +91,6 @@ ENGLISH = {
     "plus bas. La 1x1 reste nécessaire pour les tenons isolés.": (
         "Larger tiles mean fewer pieces to place, in the guide and the BrickLink list, and a lower estimated price. "
         "The 1x1 stays, for lone studs."
-    ),
-    "Mode": "Mode",
-    "Plat : uniquement des tuiles lisses carrées et rectangulaires, à même hauteur. Tuiles rondes : une tuile "
-    "ronde 1x1 par tenon pour l'image, façon LEGO Art, et le cadre en tuiles lisses 1x4 ; plus de pièces, un prix "
-    "estimé plus haut, et la baseplate se voit entre les tuiles, alors choisis-la sombre. Relief : uniquement des "
-    "tuiles lisses carrées et rectangulaires, le sujet surélevé sur des plaques noires cachées, son centre plus "
-    "haut encore, avec une carte par couche dans le guide. Le sujet est détecté automatiquement et peut être "
-    "imprécis ; le relief n'est pas encore testé avec de vraies briques. Profondeur : comme Relief, mais un modèle "
-    "estime la distance de chaque zone, jusqu'à 4 plaques cachées ; il se télécharge à la première utilisation "
-    "(27 Mo).": (
-        "Flat: only smooth square and rectangular tiles, at one height. Round tiles: a round 1x1 tile per stud for "
-        "the picture, like LEGO Art, and a frame of smooth 1x4 tiles; more pieces, a higher estimated price, and the "
-        "baseplate shows between the tiles, so pick a dark one. Relief: only smooth square and rectangular tiles, "
-        "with the subject raised on hidden black plates and its centre higher still, and a map per layer in the "
-        "guide. The subject is detected automatically and can be off; relief is untested with real bricks. Depth: "
-        "like Relief, but a model guesses how far each area is, up to 4 hidden plates; it downloads on first use "
-        "(27 MB)."
     ),
     "Support": "Base",
     "Baseplates : moins cher, mais elles ne se relient pas entre elles, il faut les fixer sur un panneau rigide. "
@@ -125,9 +105,32 @@ ENGLISH = {
         "Tints each stud in the guide. Turn it off to save ink."
     ),
     "Officielles LEGO ≈ 9 € pièce, compatibles ≈ 2 €.": "Official LEGO ≈ €9 each, compatible ≈ €2.",
-    "Devise": "Currency",
-    "Pour l'estimation du prix.": "For the price estimate.",
     "Générer les styles": "Generate the styles",
+    "Finition": "Finish",
+    "Des tuiles lisses carrées et rectangulaires, toutes à la même hauteur.": "Smooth square and long tiles, all at one height.",
+    "Une tuile ronde 1x1 par tenon, façon LEGO Art. Plus de pièces, et la baseplate se voit entre les tuiles : choisis-la sombre.": (
+        "One round 1x1 tile per stud, LEGO Art style. More pieces, and the baseplate shows between the tiles: pick a dark one."
+    ),
+    "Le sujet surélevé sur des plaques noires cachées, son centre plus haut encore. Détecté automatiquement, il peut être imprécis. Pas encore testé avec de vraies briques.": (
+        "The subject raised on hidden black plates, its centre higher still. It is found automatically and can be off. "
+        "Not yet tried with real bricks."
+    ),
+    "Comme Relief, jusqu'à 4 plaques, selon la distance qu'un modèle estime pour chaque zone. Il se télécharge une fois (27 Mo).": (
+        "Like Relief, up to 4 plates high, from how far a model guesses each area is. It downloads once (27 MB)."
+    ),
+    "Plus de réglages": "More settings",
+    "palette, tramage, contours, support, baseplates, tailles de tuiles": "palette, dithering, edges, base, baseplates, tile sizes",
+    "Couleurs": "Colours",
+    "Pièces": "Pieces",
+    "Quelques touches d'or et d'argent sur les petites zones dorées ou grises. Une grande zone ne change que si c'est très probablement du métal. Sans effet avec une limite de couleurs.": (
+        "A few touches of gold and silver on small golden or grey spots. A large area only changes if it very likely is "
+        "metal. No effect with a colour limit."
+    ),
+    "≈ {cm:.0f} cm": "≈ {cm:.0f} cm",
+    "sans cadre": "no frame",
+    "cadre {color} de {n} tenon(s)": "{color} frame of {n} stud(s)",
+    "toutes les couleurs": "all colours",
+    "{n} couleurs au plus": "{n} colours at most",
     # Step 3.
     "Choisis ton style": "Choose your style",
     "Clique sur l'aperçu qui te plaît. Les lignes marquent les baseplates.": (
