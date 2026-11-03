@@ -85,6 +85,11 @@ def fire(app):
     return _fire
 
 
+def finish(layout: str) -> str:
+    """The finish the page starts on: its cards each carry a value too, so it is read off the group."""
+    return re.search(r"id='mode', [^)]*value='(\w+)'", layout).group(1)
+
+
 def wildcard(kind: str, style: str) -> str:
     return json.dumps({"index": style, "type": kind}, separators=(",", ":"), sort_keys=True)
 
@@ -109,6 +114,7 @@ def generate(
     improved_visibility=False,
     rendered=None,
     selected=None,
+    size=1,
 ):
     return fire(
         "generate_styles",
@@ -119,8 +125,8 @@ def generate(
             palette,
             baseplates,
             currency,
-            1,
-            frame,
+            size,
+            str(frame),
             max_colors,
             dither,
             plates,
@@ -704,19 +710,19 @@ class TestProjects:
         project_id = out["my-projects"]["data"][0]["id"]
         with app.server.test_request_context(f"/?project={project_id}"):
             layout = str(app.layout())
-        assert "id='mode'" in layout and "value='relief'" in layout and "value='8'" in layout
+        assert finish(layout) == "relief" and "value='8'" in layout
         assert f"/lang/en?project={project_id}" in layout
         with app.server.test_request_context("/"):
-            assert "value='relief'" not in str(app.layout())
+            assert finish(str(app.layout())) == "flat"
         # The page fetches its layout from /_dash-layout, without its query: it is read from where it came from.
         with app.server.test_request_context(
             "/_dash-layout", headers={"Referer": f"http://localhost/?project={project_id}"}
         ):
-            assert "value='relief'" in str(app.layout())
+            assert finish(str(app.layout())) == "relief"
         with app.server.test_request_context(
             "/_dash-layout", headers={"Referer": f"http://elsewhere.example/?project={project_id}"}
         ):
-            assert "value='relief'" not in str(app.layout())
+            assert finish(str(app.layout())) == "flat"
 
     def test_an_unknown_link_says_so(self, app):
         response = app.server.test_client().get("/p/" + "a" * 22)
@@ -771,3 +777,33 @@ class TestControls:
 
     def test_the_1x1_plate_is_always_kept(self):
         assert app_module.controls_from_settings({"plates": ["2x2", "9x9"]})["plates"] == ["1x1", "2x2"]
+
+
+class TestForgedRequests:
+    """The page sends its settings with each request, and a request can be made by hand."""
+
+    def test_a_size_the_page_doesnt_offer_falls_back_to_the_default(self, fire, source):
+        out = generate(fire, source, size=300, palette="../x", plates="1x1")
+        settings = out["settings"]["data"]
+        assert settings["size"] == app_module.DEFAULT_CONTROLS["size"]
+        assert settings["palette"] == "buyable" and settings["plates"] == list(app_module.PLATE_SIZES)
+
+    def test_settings_sent_back_are_checked_again(self, fire, source):
+        settings = generate(fire, source)["settings"]["data"]
+        out = fire("apply_relief_edit", [1, None, source, {**settings, "size": 300}], "relief-saved.data")
+        # The default size: 3 baseplates along the 80 x 40 picture, 2 across.
+        assert out["builds"]["data"]["natural"]["baseplates"] == 6
+        assert app_module.clean_settings({**settings, "size": 300, "currency": "BTC"})["currency"] == "EUR"
+
+    def test_requests_larger_than_any_upload_are_refused_unread(self, app):
+        body = b"x" * (app_module.MAX_REQUEST_BYTES + 1)
+        response = app.server.test_client().post("/_dash-update-component", data=body, content_type="application/json")
+        assert response.status_code == 413
+
+
+def test_the_currency_sits_by_the_prices_and_guide_options_by_the_pdf(app):
+    layout = str(app.layout())
+    # In step 3's heading: after step 2's button, before the downloads.
+    assert layout.index("id='generate'") < layout.index("id='currency'") < layout.index("id='download-pdf'")
+    assert layout.index("id='improved-visibility'") > layout.index("id='download-pdf'")
+    assert layout.index("id='tinted'") > layout.index("id='download-pdf'")

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
@@ -180,6 +182,25 @@ class TestSessions:
     def test_reports_an_expired_session(self):
         with pytest.raises(service.ImageError, match="introuvable"):
             service.source_path("0" * 32)
+
+    def test_the_least_recently_used_go_once_sessions_take_too_much_room(self, png_bytes, session_root, monkeypatch):
+        first, second, third = (service.save_source(png_bytes, f"{n}.png") for n in "abc")
+        for age, session in ((300, first), (200, second), (100, third)):
+            for path in (session_root / session).rglob("*"):
+                stamp = time.time() - age
+                os.utime(path, (stamp, stamp))
+        size = service.source_path(first).stat().st_size
+        monkeypatch.setattr(service, "MAX_SESSIONS_BYTES", 2 * size)
+        service.save_source(png_bytes, "d.png")
+        assert not (session_root / first).exists()
+        assert (session_root / second).exists() and (session_root / third).exists()
+
+    def test_a_session_in_use_isnt_stale_though_its_folder_is_old(self, png_bytes, session_root, monkeypatch):
+        session = service.save_source(png_bytes, "a.png")
+        old = time.time() - 2 * service.SESSION_TTL_SECONDS
+        os.utime(session_root / session, (old, old))  # Only its files were written since.
+        service.save_source(png_bytes, "b.png")
+        assert (session_root / session).exists()
 
     def test_purges_stale_sessions(self, png_bytes, session_root, monkeypatch):
         old = service.save_source(png_bytes, "old.png")

@@ -13,7 +13,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gui = ["customtkinter>=5.2"]
 depth = ["onnxruntime>=1.18"]
 web = [
     "dash>=2.17",

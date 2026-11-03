@@ -194,11 +194,6 @@ def comes_in(brick_id: int, part: str) -> bool:
     return BRICKLINK_COLOR_IDS.get(_NAMES[brick_id]) in PART_COLORS[part]
 
 
-def round_tile_parts(distribution: Mapping[int, int]) -> dict[tuple[int, str], int]:
-    """Return the parts of a build made of round tiles, as {(brick id, part): count}."""
-    return {(brick_id, ROUND_TILE): count for brick_id, count in distribution.items()}
-
-
 def unavailable_parts(parts: Mapping[tuple[int, str], int]) -> list[str]:
     """Return the colours of parts BrickLink doesn't know in that colour. Only a colour
     chosen by hand can have any, as the palettes leave out what can't be built."""

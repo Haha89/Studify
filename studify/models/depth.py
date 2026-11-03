@@ -50,6 +50,7 @@ _RECENT_DEPTHS = 4
 _lock = threading.Lock()
 _session = None
 _depths: dict[str, np.ndarray] = {}
+_depths_lock = threading.Lock()
 _downloaded: int | None = None  # Bytes so far, while the model is downloading.
 
 
@@ -124,8 +125,10 @@ def estimate_depth(rgb: np.ndarray) -> np.ndarray:
     :raises DepthError: if the model can't be run.
     """
     key = hashlib.sha256(rgb.tobytes()).hexdigest()
-    if key in _depths:
-        return _depths[key]
+    # Two depth reliefs can run at once, in two threads: the cache is read in one step,
+    # and trimmed under a lock.
+    if (cached := _depths.get(key)) is not None:
+        return cached
     session = _load_session()
     height, width = rgb.shape[:2]
     input_height, input_width = _input_shape(height, width)
@@ -138,9 +141,10 @@ def estimate_depth(rgb: np.ndarray) -> np.ndarray:
     else:
         near = np.clip((predicted - low) / (high - low), 0, 1)
     depth = cv2.resize(near, (width, height), interpolation=cv2.INTER_LINEAR)
-    while len(_depths) >= _RECENT_DEPTHS:
-        _depths.pop(next(iter(_depths)))
-    _depths[key] = depth
+    with _depths_lock:
+        while len(_depths) >= _RECENT_DEPTHS:
+            _depths.pop(next(iter(_depths)))
+        _depths[key] = depth
     return depth
 
 

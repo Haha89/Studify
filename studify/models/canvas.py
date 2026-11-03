@@ -11,7 +11,6 @@ import pandas as pd
 from studify.models import depth
 from studify.models.assembly import ASSEMBLIES, DEFAULT_ASSEMBLY, PANEL_STUDS, assembly_parts
 from studify.models.brick import Brick
-from studify.models.bricklink import round_tile_parts
 from studify.models.brickstore import BrickStore
 from studify.models.plates import BORDER_SIZES, PLATE_SIZES, Plate, count_parts, pack_baseplates, plate_regions
 from studify.models.pricing import DEFAULT_PALETTE, PriceEstimate, estimate_price
@@ -140,13 +139,6 @@ class Canvas:
     def border_plates(self) -> list[Plate]:
         """Return the plates covering the border of a mosaic made of round tiles."""
         return pack_baseplates(self.get_brick_ids(), BORDER_SIZES, self.border_mask(), tile=True)
-
-    def get_round_part_counts(self) -> dict[tuple[int, str], int]:
-        """Return the parts of a mosaic made of round tiles, with plates around the
-        picture, as {(brick id, BrickLink part number): how many}."""
-        tiles = np.unique(self.get_brick_ids()[~self.border_mask()], return_counts=True)
-        distribution = dict(zip(tiles[0].tolist(), tiles[1].tolist(), strict=True))
-        return round_tile_parts(distribution) | count_parts(self.border_plates())
 
     def layout(self, sizes: Iterable[str] = PLATE_SIZES, round_tiles: bool = False) -> Layout:
         """Return which piece goes where, given the canvas's relief.

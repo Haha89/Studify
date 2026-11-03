@@ -12,7 +12,6 @@ from studify.models.bricklink import (
     TILE_1X1,
     TILE_PARTS,
     comes_in,
-    round_tile_parts,
     unavailable_parts,
     unlisted_colors,
     wanted_list_xml,
@@ -100,7 +99,7 @@ def test_round_palettes_only_hold_colours_the_tile_comes_in():
 
 def test_round_tiles_reach_the_wanted_list():
     black = NAMES.index("Black")
-    xml = wanted_list_xml({black: 20}, round_tile_parts({black: 20}))
+    xml = wanted_list_xml({black: 20}, {(black, ROUND_TILE): 20})
     assert "<ITEMID>98138</ITEMID>" in xml and "<MINQTY>21</MINQTY>" in xml
 
 

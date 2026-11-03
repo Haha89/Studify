@@ -57,8 +57,6 @@ Side builds for the raised parts, as in LEGO's The Kiss, if the test build shows
 
 ## Web app
 
-- Review the interface: step 2 now has too many options and looks complex. Consider simple
-  defaults up front, with the rest tucked away under advanced settings.
 - Try painting a relief and pinch to zoom on a real touch screen, and the 3D view on weaker
   graphics than an RTX 3060 Ti.
 - Offer the frame's structure in another colour than black.

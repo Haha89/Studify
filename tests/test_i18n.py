@@ -79,3 +79,7 @@ def test_every_choice_can_be_translated():
         for label, _value in choices:
             assert label in i18n.ENGLISH or label[0].isdigit()
     assert all(label in i18n.ENGLISH for label in service.STYLE_LABELS.values())
+
+
+def test_every_finish_is_described_in_english():
+    assert all(text in i18n.ENGLISH for text in app.MODE_DESCRIPTIONS.values())

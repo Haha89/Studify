@@ -46,6 +46,8 @@ from studify.web.i18n import _, current_language
 SESSION_ROOT = Path(tempfile.gettempdir()) / "studify-web"
 # Sessions older than this are deleted whenever a new image comes in.
 SESSION_TTL_SECONDS = 24 * 3600
+# Room all sessions may take together; the least recently used go first beyond it.
+MAX_SESSIONS_BYTES = 5 * 1024**3
 MAX_IMAGE_BYTES = 15 * 1024 * 1024
 # Pixels a picture may have, checked before decoding it: a small, well compressed file
 # can still decode into gigabytes. 50 million is a large phone photo's full resolution.
@@ -279,11 +281,27 @@ def _safe_stem(name: str) -> str:
 
 
 def _purge_old_sessions(now: float) -> None:
+    """Delete sessions unused for ``SESSION_TTL_SECONDS``, then the least recently used
+    while all of them together take more than ``MAX_SESSIONS_BYTES``."""
     if not SESSION_ROOT.is_dir():
         return
+    kept = []
     for session in SESSION_ROOT.iterdir():
-        if session.is_dir() and now - session.stat().st_mtime > SESSION_TTL_SECONDS:
+        if not session.is_dir():
+            continue
+        files = [path.stat() for path in session.rglob("*") if path.is_file()]
+        # A file written over doesn't change its folder's date: the newest file tells when it was used.
+        last_used = max([stat.st_mtime for stat in files], default=session.stat().st_mtime)
+        if now - last_used > SESSION_TTL_SECONDS:
             shutil.rmtree(session, ignore_errors=True)
+        else:
+            kept.append((last_used, sum(stat.st_size for stat in files), session))
+    total = sum(size for _used, size, _session in kept)
+    for _used, size, session in sorted(kept):
+        if total <= MAX_SESSIONS_BYTES:
+            break
+        shutil.rmtree(session, ignore_errors=True)
+        total -= size
 
 
 def save_source(data: bytes, name: str) -> str:
@@ -460,6 +478,43 @@ def depth_download_message() -> str:
     ).format(done=done / 10**6, total=total / 10**6)
 
 
+def _check_style(style: str) -> None:
+    if style not in STYLE_LABELS:
+        raise ImageError(_("Style inconnu."))
+
+
+def _rendered_file(session_id: str, style: str, name: str) -> Path:
+    """Return a file ``render_styles`` keeps for a style, its name given as
+    ``"mosaic-{style}.npz"``, or say it hasn't been made."""
+    _check_style(style)
+    path = path_in_session(session_id, name.format(style=style))
+    if not path.is_file():
+        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
+    return path
+
+
+# The settings that shape the mosaic itself, passed on to ``build_canvas``.
+CANVAS_OPTIONS = (
+    "frame",
+    "frame_color",
+    "max_colors",
+    "palette",
+    "dither",
+    "round_tiles",
+    "relief",
+    "assembly",
+    "sharp",
+    "accents",
+)
+
+
+def _canvas_options(arguments: dict[str, object]) -> dict[str, object]:
+    """Pick ``build_canvas``'s options out of a render's or a guide's arguments."""
+    options = {name: arguments[name] for name in CANVAS_OPTIONS}
+    options["accents"] = bool(options["accents"] and options["round_tiles"])  # Only round tiles come in gold.
+    return options
+
+
 def _save_preview(session_id: str, style: str, rgb: np.ndarray) -> str:
     """Keep a style's preview in the session, and return the URL to show it at. It goes
     over plain HTTP: as base64, three of them make a callback response of many megabytes,
@@ -473,12 +528,7 @@ def _save_preview(session_id: str, style: str, rgb: np.ndarray) -> str:
 
 def preview_path(session_id: str, style: str) -> Path:
     """Return where a style's preview is kept."""
-    if style not in STYLE_LABELS:
-        raise ImageError(_("Style inconnu."))
-    path = path_in_session(session_id, f"preview-{style}.png")
-    if not path.is_file():
-        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
-    return path
+    return _rendered_file(session_id, style, "preview-{style}.png")
 
 
 def render_styles(
@@ -509,20 +559,9 @@ def render_styles(
     Each style's mosaic is also kept in the session, for ``realistic_png``. A style
     whose painted relief no longer fits the mosaic, after a change of size, says so with
     ``relief_dropped``."""
+    options = _canvas_options(locals())
     path = _working_image(session_id, crop)
     # A depth relief runs a neural network: it waits for its turn, like a PDF.
-    options = {
-        "frame": frame,
-        "frame_color": frame_color,
-        "max_colors": max_colors,
-        "palette": palette,
-        "dither": dither,
-        "round_tiles": round_tiles,
-        "relief": relief,
-        "assembly": assembly,
-        "sharp": sharp,
-        "accents": accents and round_tiles,
-    }
     with _HeavyWork() if relief == "depth" else contextlib.nullcontext():
         return [
             _render_style(session_id, path, style, label, size, options, plates, baseplates, currency)
@@ -603,11 +642,7 @@ def _render_style(
 def realistic_png(session_id: str, style: str) -> bytes:
     """Return the mosaic ``render_styles`` last made for a session and style, drawn
     as tiles, as PNG file bytes."""
-    if style not in STYLE_LABELS:
-        raise ImageError(_("Style inconnu."))
-    mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
-    if not mosaic.is_file():
-        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
+    mosaic = _rendered_file(session_id, style, "mosaic-{style}.npz")
     with np.load(mosaic) as saved:
         pixels = render_mosaic(saved["colors"], saved["regions"], saved["heights"])
     ok, png = cv2.imencode(".png", cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR))
@@ -619,11 +654,7 @@ def realistic_png(session_id: str, style: str) -> bytes:
 def model_data(session_id: str, style: str) -> dict[str, object]:
     """Return the pieces of the mosaic ``render_styles`` last made for a session and
     style, for the 3D view. Grids are flat, row by row, to keep this small."""
-    if style not in STYLE_LABELS:
-        raise ImageError(_("Style inconnu."))
-    mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
-    if not mosaic.is_file():
-        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
+    mosaic = _rendered_file(session_id, style, "mosaic-{style}.npz")
     with np.load(mosaic) as saved:
         rows, cols = saved["regions"].shape
         palette, colors = np.unique(saved["colors"].reshape(-1, 3), axis=0, return_inverse=True)
@@ -644,11 +675,7 @@ def model_data(session_id: str, style: str) -> dict[str, object]:
 
 def relief_data(session_id: str, style: str) -> dict[str, object]:
     """Return what the relief editor shows for a rendered mosaic."""
-    if style not in STYLE_LABELS:
-        raise ImageError(_("Style inconnu."))
-    mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
-    if not mosaic.is_file():
-        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
+    mosaic = _rendered_file(session_id, style, "mosaic-{style}.npz")
     with np.load(mosaic) as saved:
         rows, cols = saved["heights"].shape
         palette, colors = np.unique(saved["colors"].reshape(-1, 3), axis=0, return_inverse=True)
@@ -682,11 +709,7 @@ def save_relief_edit(session_id: str, style: str, heights: object) -> None:
     :param heights: The plates under each stud, flat, row by row, as the editor sends it.
     :raises ImageError: if it doesn't fit the mosaic.
     """
-    if style not in STYLE_LABELS:
-        raise ImageError(_("Style inconnu."))
-    mosaic = path_in_session(session_id, f"mosaic-{style}.npz")
-    if not mosaic.is_file():
-        raise ImageError(_("Cette mosaïque n'a pas encore été générée."))
+    mosaic = _rendered_file(session_id, style, "mosaic-{style}.npz")
     with np.load(mosaic) as saved:
         shape, border = saved["heights"].shape, saved["border"]
     try:
@@ -752,56 +775,29 @@ def build_pdf(
     improved_visibility: bool = False,
 ) -> Path:
     """Write the build guide for one style as a PDF and return its path."""
-    if style not in STYLE_LABELS:
-        raise ImageError(_("Style inconnu."))
+    _check_style(style)
+    options = _canvas_options(locals())
     # Printing starts a full browser: it waits for its turn.
     with _HeavyWork():
-        return _build_pdf(
-            session_id,
-            style,
-            size,
-            {
-                "frame": frame,
-                "frame_color": frame_color,
-                "max_colors": max_colors,
-                "palette": palette,
-                "dither": dither,
-                "round_tiles": round_tiles,
-                "relief": relief,
-                "assembly": assembly,
-                "sharp": sharp,
-                "accents": accents and round_tiles,
-            },
-            crop,
-            {
-                "baseplates": baseplates,
-                "currency": currency,
-                "tinted": tinted,
-                "improved_visibility": improved_visibility,
-                "plates": plates,
-                "round_tiles": round_tiles,
-            },
+        canvas = build_canvas(
+            size, _working_image(session_id, crop), style=style, heights=_saved_edit(session_id, style), **options
         )
-
-
-def _build_pdf(
-    session_id: str,
-    style: str,
-    size: int,
-    options: dict[str, object],
-    crop: Crop | list[float] | None,
-    guide: dict[str, object],
-) -> Path:
-    path = _working_image(session_id, crop)
-    canvas = build_canvas(size, path, style=style, heights=_saved_edit(session_id, style), **options)
-    creator = PdfCreator(canvas, lang=current_language(), **guide)
-    return creator.generate_pdf(output_dir=source_path(session_id).parent / f"guide-{style}")
+        creator = PdfCreator(
+            canvas,
+            baseplates=baseplates,
+            currency=currency,
+            tinted=tinted,
+            improved_visibility=improved_visibility,
+            plates=plates,
+            lang=current_language(),
+            round_tiles=round_tiles,
+        )
+        return creator.generate_pdf(output_dir=source_path(session_id).parent / f"guide-{style}")
 
 
 def built_pdf(session_id: str, style: str) -> Path:
     """Return the PDF ``build_pdf`` last wrote for a session and style."""
-    if style not in STYLE_LABELS:
-        raise ImageError(_("Style inconnu."))
+    _check_style(style)
     path = source_path(session_id)
     pdf = path.parent / f"guide-{style}" / f"{path.stem}.pdf"
     if not pdf.is_file():
