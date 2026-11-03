@@ -8,36 +8,67 @@
 [![Web app: Dash](https://img.shields.io/badge/web%20app-Dash-008DE4?logo=plotly&logoColor=white)](https://dash.plotly.com/)
 [![Unofficial: not affiliated with LEGO](https://img.shields.io/badge/unofficial-not%20affiliated%20with%20LEGO-lightgrey)](#disclaimer)
 
-Turn any image into a LEGO mosaic and a printable, baseplate-by-baseplate build guide.
+**Turn any photo into a LEGO mosaic, with a printable build guide, a parts list and a price estimate.**
 
 > **Unofficial fan project.** Studify is not affiliated with, sponsored, authorized or
 > endorsed by the LEGO Group. See the [disclaimer](#disclaimer).
 
-Studify downsamples your picture to whole 32x32 LEGO baseplates, snaps every pixel to the
-nearest real LEGO colour, and writes an HTML guide with one stud map per baseplate, the
-plates you need, and a cost estimate. It can also write a BrickLink wanted list.
+<p align="center">
+  <img src="docs/images/dog-original.png" width="190" alt="Original picture">
+  &nbsp;➜&nbsp;
+  <img src="docs/images/dog-natural.png" width="190" alt="Natural mosaic">
+  <img src="docs/images/dog-pop.png" width="190" alt="Pop-art mosaic">
+  <img src="docs/images/dog-comic.png" width="190" alt="Comic mosaic">
+</p>
 
-## Example
+Pick a picture, choose how big it should be, and Studify:
 
-One picture, three styles, each 3 x 3 baseplates (96 x 96 studs, about 77 cm a side)
-with a 2-stud black frame:
+- 🧱 snaps every pixel to a **real LEGO colour** you can actually buy,
+- 🎨 offers three looks side by side: **natural**, **pop art** and **comic**,
+- 📄 writes an **A4 build guide**, one page per 32x32 baseplate,
+- 🛒 gives you a **BrickLink wanted list** to order every piece in one go,
+- 💶 tells you roughly **what it will cost** before you buy anything.
 
-| Original | Natural | Pop (`--style pop`) | Comic (`--style comic`) |
-| :---: | :---: | :---: | :---: |
-| <img src="docs/images/dog-original.png" width="200" alt="Original picture"> | <img src="docs/images/dog-natural.png" width="200" alt="Natural mosaic"> | <img src="docs/images/dog-pop.png" width="200" alt="Pop-art mosaic"> | <img src="docs/images/dog-comic.png" width="200" alt="Comic mosaic"> |
-| | 45 colours | 12 colours | 42 colours |
-| | 363–704 € | 287–501 € | 323–599 € |
+## Quick start
 
-Prices are estimates with official LEGO baseplates, shipping excluded (see
-[Pricing](#pricing)). The pop style's short palette makes it the cheapest to build.
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs the right Python for you).
 
-**Example build guide:** [`docs/example-guide-dog.pdf`](docs/example-guide-dog.pdf), the
-pop render at 2 x 2 baseplates. It opens with an overview, then has one A4 page per
-baseplate with its stud map and the plates it needs, then the colour reference.
+```bash
+git clone https://github.com/Haha89/legoMe.git studify
+cd studify
+uv sync --extra web
+uv run studify-web
+```
 
-Regenerate these with `uv run python scripts/make_docs.py`.
+Then open <http://127.0.0.1:8050> in your browser. That's it. Prefer the terminal? Jump to
+[the command line](#command-line).
 
-## Install
+## A tour of the web app
+
+**1. Choose a picture.** Drop a photo, or paste a link to one, and crop it if you like.
+
+<img src="docs/images/web-step1.png" width="640" alt="Step 1: upload a picture and crop it">
+
+**2. Set up the mosaic.** The size sets the price: each baseplate is 32 x 32 studs, about
+25.6 cm a side. Pick a finish (flat tiles, round tiles, or a raised relief), a frame and how
+many colours to use. *More settings* holds the rest: palette, dithering, baseplates, tile sizes.
+
+<img src="docs/images/web-step2.png" width="640" alt="Step 2: size, finish, frame and number of colours">
+
+**3. Choose your style, then 4. download the guide.** Compare the three renders with their
+prices, then download the PDF guide, copy the BrickLink list, or save a link to share.
+
+<img src="docs/images/web-step3.png" width="640" alt="Steps 3 and 4: the natural, pop-art and comic renders with prices, and the download buttons">
+
+**Check it in 3D** before you buy: every style has a *3D view* you can turn and zoom, and a
+*Realistic view*.
+
+<img src="docs/images/web-3d.png" width="640" alt="The pop-art mosaic in the 3D view">
+
+**Example build guide:** [`docs/example-guide-dog.pdf`](docs/example-guide-dog.pdf): an
+overview, one A4 page per baseplate with its stud map and pieces, then the colour reference.
+
+## Install options
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
 
@@ -46,7 +77,7 @@ uv sync                  # core dependencies
 uv sync --all-extras     # also install the web app and the depth relief
 ```
 
-## Use
+## Command line
 
 ```bash
 # A 4-baseplate-wide mosaic of the sample image
@@ -102,20 +133,16 @@ uv run studify pics/dog.png -s 3 --bricklink
 The guide lands at `<output-dir>/<image-name>.html`. Open it and print to PDF — the
 stylesheet puts one baseplate on each page — or call `PdfCreator.generate_pdf`.
 
-### Web app
+## Running and hosting the web app
 
 ```bash
 uv sync --extra web
-uv run studify-web        # then open http://127.0.0.1:8050
+uv run studify-web                              # then open http://127.0.0.1:8050
 uv run studify-web --host 0.0.0.0 --threads 8   # reachable from other machines
-uv run studify-web --debug                                # Flask's server, with hot reload
+uv run studify-web --debug                      # Flask's server, with hot reload
 ```
 
-Upload a photo (or paste a link), crop it if you like, pick the size, frame, colour
-limit, baseplates and currency, the plate sizes, and optionally dithering or uncoloured
-stud maps, compare the natural, pop and comic renders side by side with their prices, and
-download the chosen one as a PDF guide or a BrickLink wanted list. The app and its guides
-are in French or English. Uploads are stored at 2000 pixels at most on the longest side.
+The app and its guides are in French or English. Uploads are stored at 2000 pixels at most on the longest side.
 PDFs are printed by a headless Chrome, Chromium or Edge; set `STUDIFY_BROWSER` to point at
 one if it isn't found automatically.
 
@@ -125,9 +152,7 @@ decoded, links are only downloaded from public addresses (checked again as the c
 made, so DNS can't switch it to the server's own network), and at most 2 PDFs or depth reliefs
 are made at once per process: others wait up to 30 seconds, then are asked to try again.
 
-<img src="docs/images/web-app.png" width="700" alt="The web app comparing natural, pop-art and comic renders of a mountain lake, with prices and download buttons">
-
-### As a library
+## As a library
 
 ```python
 from studify.models.canvas import Canvas
@@ -179,7 +204,7 @@ By default the list and the guide use 1x1, 1x2, 1x3, 1x4 and 2x2 plates wherever
 allows, each within its baseplate, and the stud maps draw each plate as one box. Choose fewer
 with `--plates`; 1x1 always stays, as it is the only plate that fits a lone stud.
 
-## Web app
+## Painting the relief, saving and sharing
 
 `uv run studify-web` opens in French or English, from the browser's preferences or the switch at
 the top of the page. With a relief, "Edit the relief" lets you paint how high each stud stands:
