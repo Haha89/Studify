@@ -14,11 +14,11 @@
 > endorsed by the LEGO Group. See the [disclaimer](#disclaimer).
 
 <p align="center">
-  <img src="docs/images/dog-original.png" width="190" alt="Original picture">
+  <img src="docs/images/mountain-lake-original.png" width="190" alt="Original picture">
   &nbsp;➜&nbsp;
-  <img src="docs/images/dog-natural.png" width="190" alt="Natural mosaic">
-  <img src="docs/images/dog-pop.png" width="190" alt="Pop-art mosaic">
-  <img src="docs/images/dog-comic.png" width="190" alt="Comic mosaic">
+  <img src="docs/images/mountain-lake-natural.png" width="190" alt="Natural mosaic">
+  <img src="docs/images/mountain-lake-pop.png" width="190" alt="Pop-art mosaic">
+  <img src="docs/images/mountain-lake-comic.png" width="190" alt="Comic mosaic">
 </p>
 
 Pick a picture, choose how big it should be, and Studify:
@@ -63,9 +63,9 @@ prices, then download the PDF guide, copy the BrickLink list, or save a link to 
 **Check it in 3D** before you buy: every style has a *3D view* you can turn and zoom, and a
 *Realistic view*.
 
-<img src="docs/images/web-3d.png" width="640" alt="The pop-art mosaic in the 3D view">
+<img src="docs/images/web-3d.png" width="640" alt="The natural mosaic in round tiles, on LEGO Art panels with their black frame, in the 3D view">
 
-**Example build guide:** [`docs/example-guide-dog.pdf`](docs/example-guide-dog.pdf): an
+**Example build guide:** [`docs/example-guide-mountain-lake.pdf`](docs/example-guide-mountain-lake.pdf): an
 overview, one A4 page per baseplate with its stud map and pieces, then the colour reference.
 
 ## Install options
