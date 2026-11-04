@@ -94,7 +94,7 @@ def _used_bytes() -> int:
 
 def _thumbnail(session_id: str, style: str | None) -> str:
     """A small JPEG ``data:`` URI of the chosen style's preview, else of the picture."""
-    preview = service.path_in_session(session_id, f"preview-{style or 'natural'}.png")
+    preview = service.path_in_session(session_id, f"previews/{style or 'natural'}.png")
     img = fit_within(read_image(preview if preview.is_file() else service.source_path(session_id)), THUMBNAIL_SIZE)
     ok, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
     if not ok:

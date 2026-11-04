@@ -522,13 +522,16 @@ def _save_preview(session_id: str, style: str, rgb: np.ndarray) -> str:
     ok, png = cv2.imencode(".png", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
     if not ok:
         raise ImageError(_("Impossible de dessiner cette mosaïque."))
-    path_in_session(session_id, f"preview-{style}.png").write_bytes(png.tobytes())
+    # In a subfolder: next to the source, ``source_path`` could take a preview for it.
+    path = path_in_session(session_id, f"previews/{style}.png")
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(png.tobytes())
     return f"/preview/{session_id}/{style}.png?v={time.time_ns()}"
 
 
 def preview_path(session_id: str, style: str) -> Path:
     """Return where a style's preview is kept."""
-    return _rendered_file(session_id, style, "preview-{style}.png")
+    return _rendered_file(session_id, style, "previews/{style}.png")
 
 
 def render_styles(

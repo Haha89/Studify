@@ -229,6 +229,13 @@ def test_render_styles_returns_one_preview_per_style(png_bytes):
         assert result["colors"] >= 1
 
 
+def test_a_render_keeps_the_source_whatever_its_name(png_bytes):
+    # "sunset" sorts after "preview": previews next to the source were once taken for it.
+    session = service.save_source(png_bytes, "sunset.png")
+    service.render_styles(session, size=1, frame=1, max_colors=None)
+    assert service.source_path(session).name == "sunset.png"
+
+
 def test_build_pdf_writes_the_selected_style(png_bytes, monkeypatch):
     printed = []
 
