@@ -78,7 +78,7 @@ MAX_REQUEST_BYTES = 25 * 2**20
 # What each step-2 control starts at, by its id, and the property holding its value.
 DEFAULT_CONTROLS = {
     "size": 3,
-    "frame": "2",
+    "frame": "1",
     "frame-color": "black",
     "max-colors": "0",
     "palette": "buyable",

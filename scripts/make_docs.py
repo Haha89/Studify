@@ -20,15 +20,15 @@ from studify.models.pdf_creator import PdfCreator
 from studify.models.utils import read_image
 from studify.process import build_canvas
 
-SOURCE = Path("pics/dog.png")
+SOURCE = Path("pics/mountain-lake.jpg")
 DOCS = Path("docs")
 IMAGES = DOCS / "images"
 
-# Showcase renders: 3 baseplates wide with a 2-stud frame, one per style.
-SHOWCASE = {"size": 3, "frame": 2}
+# Showcase renders: 3 baseplates wide with a 1-stud frame, one per style.
+SHOWCASE = {"size": 3, "frame": 1}
 STYLES = ("natural", "pop", "comic")
 # The example guide is kept small (2x2 baseplates) so the PDF stays light.
-GUIDE = {"size": 2, "frame": 2, "style": "pop"}
+GUIDE = {"size": 2, "frame": 1, "style": "pop"}
 
 # Pixels per stud in the showcase images: big enough to see each brick.
 STUD_PX = 4
